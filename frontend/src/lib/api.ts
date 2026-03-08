@@ -154,3 +154,34 @@ export function videoUrl(projectId: string): string {
 export function clipUrl(projectId: string, clipFilename: string): string {
   return `${API}/clip/${projectId}/${clipFilename}`;
 }
+
+/**
+ * Download clip segment via ffmpeg extraction.
+ * Use for clips without clip_path (not yet exported).
+ */
+export function extractClipUrl(projectId: string, clipIndex: number): string {
+  return `${API}/clip/${projectId}/extract/${clipIndex}`;
+}
+
+export async function downloadClipExtract(
+  projectId: string,
+  clipIndex: number,
+  filename?: string
+): Promise<void> {
+  const url = extractClipUrl(projectId, clipIndex);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(await res.text());
+  const blob = await res.blob();
+  const disposition = res.headers.get("content-disposition");
+  let name = filename;
+  if (!name && disposition) {
+    const match = disposition.match(/filename="?([^";\n]+)"?/);
+    if (match) name = match[1];
+  }
+  if (!name) name = `clip_${clipIndex + 1}.mp4`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}

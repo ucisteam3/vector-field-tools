@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Film, Play, Download, ChevronLeft, Loader2, Sparkles, Settings2, Settings, PanelRightOpen, PanelRightClose } from "lucide-react";
-import { getProject, getProjectStatus, exportClipWithSettings, videoUrl, clipUrl, type Project, type Clip } from "@/lib/api";
+import { getProject, getProjectStatus, exportClipWithSettings, videoUrl, clipUrl, downloadClipExtract, type Project, type Clip } from "@/lib/api";
 import ExportSettingsPanel from "@/components/ExportSettingsPanel";
 import { type ExportSettings, DEFAULT_EXPORT_SETTINGS } from "@/lib/export-settings";
 
@@ -17,6 +17,8 @@ export default function ProjectPage() {
   const [status, setStatus] = useState<{ status: string; progress?: string } | null>(null);
   const [playingClip, setPlayingClip] = useState<number | null>(null);
   const [exporting, setExporting] = useState<Set<number>>(new Set());
+  const [downloading, setDownloading] = useState<Set<number>>(new Set());
+  const previewEndRef = useRef<{ index: number; end: number } | null>(null);
   const [exportSettings, setExportSettings] = useState<ExportSettings>(() => ({ ...DEFAULT_EXPORT_SETTINGS }));
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -58,10 +60,48 @@ export default function ProjectPage() {
 
   const playClip = (clip: Clip, index: number) => {
     if (clip.clip_path) setPlayingClip(index);
-    else seekTo(clip.start);
+    else previewClip(index);
   };
 
-  const previewClip = (index: number) => seekTo(project?.clips?.[index]?.start ?? 0);
+  const previewClip = (index: number) => {
+    const clip = project?.clips?.[index];
+    if (!clip || !videoRef.current) return;
+    videoRef.current.currentTime = clip.start;
+    videoRef.current.play();
+    previewEndRef.current = { index, end: clip.end };
+  };
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !previewEndRef.current) return;
+    const handleTimeUpdate = () => {
+      const p = previewEndRef.current;
+      if (p && video.currentTime >= p.end) {
+        video.pause();
+        previewEndRef.current = null;
+      }
+    };
+    video.addEventListener("timeupdate", handleTimeUpdate);
+    return () => {
+      video.removeEventListener("timeupdate", handleTimeUpdate);
+    };
+  }, [project?.clips]);
+
+  const handleDownloadExtract = async (index: number, title?: string) => {
+    setDownloading((prev) => new Set(prev).add(index));
+    try {
+      const safe = (title ?? `clip_${index + 1}`).replace(/[^a-zA-Z0-9 _-]/g, "").trim() || `clip_${index + 1}`;
+      await downloadClipExtract(id, index, `${safe}.mp4`);
+    } catch (e) {
+      alert(String(e));
+    } finally {
+      setDownloading((prev) => {
+        const next = new Set(prev);
+        next.delete(index);
+        return next;
+      });
+    }
+  };
 
   const handleExportWithSettings = async (index: number) => {
     setExporting((prev) => new Set(prev).add(index));
@@ -155,16 +195,21 @@ export default function ProjectPage() {
             {!isAnalyzing && clips.length > 0 && duration > 0 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-4">
                 <p className="text-sm text-zinc-500 mb-2">Timeline</p>
-                <div className="h-12 bg-white/5 rounded-lg overflow-hidden flex">
+                <div className="h-12 bg-white/5 rounded-lg overflow-hidden flex relative">
                   {clips.map((clip, i) => (
                     <motion.div
                       key={i}
                       initial={{ scaleX: 0 }}
                       animate={{ scaleX: 1 }}
                       transition={{ delay: i * 0.03 }}
-                      style={{ width: `${(clip.duration / duration) * 100}%`, minWidth: "4px" }}
+                      style={{
+                        position: "absolute",
+                        left: `${(clip.start / duration) * 100}%`,
+                        width: `${(clip.duration / duration) * 100}%`,
+                        minWidth: 4,
+                      }}
                       className="bg-cyan-500/60 hover:bg-cyan-500 cursor-pointer transition-colors"
-                      onClick={() => seekTo(clip.start)}
+                      onClick={() => previewClip(i)}
                       title={clip.title}
                     />
                   ))}
@@ -241,7 +286,19 @@ export default function ProjectPage() {
                             <Download className="w-4 h-4" /> Download
                           </a>
                         </>
-                      ) : null}
+                      ) : (
+                        <button
+                          onClick={() => handleDownloadExtract(i, clip.title)}
+                          disabled={downloading.has(i)}
+                          className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-sm disabled:opacity-50"
+                        >
+                          {downloading.has(i) ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <><Download className="w-4 h-4" /> Download</>
+                          )}
+                        </button>
+                      )}
                       <button
                         onClick={() => handleExportWithSettings(i)}
                         disabled={exporting.has(i)}

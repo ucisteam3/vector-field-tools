@@ -168,15 +168,6 @@ def serve_video(project_id: str):
     return FileResponse(vp, media_type="video/mp4")
 
 
-@app.get("/clip/{project_id}/{clip_filename:path}")
-def serve_clip(project_id: str, clip_filename: str):
-    """Serve a clip video file (exported clip by filename)."""
-    cp = get_clip_path(project_id, clip_filename)
-    if not cp or not cp.exists():
-        raise HTTPException(status_code=404, detail="Clip not found")
-    return FileResponse(cp, media_type="video/mp4")
-
-
 @app.get("/clip/{project_id}/extract/{clip_index:int}")
 def extract_clip_segment(project_id: str, clip_index: int):
     """
@@ -185,7 +176,6 @@ def extract_clip_segment(project_id: str, clip_index: int):
     Returns the generated clip file for download.
     """
     import subprocess
-    import tempfile
     meta = get_project(project_id)
     if not meta or not meta.get("clips"):
         raise HTTPException(status_code=404, detail="Project not found")
@@ -223,6 +213,15 @@ def extract_clip_segment(project_id: str, clip_index: int):
         raise HTTPException(status_code=504, detail="Extraction timeout")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/clip/{project_id}/{clip_filename:path}")
+def serve_clip(project_id: str, clip_filename: str):
+    """Serve a clip video file (exported clip by filename)."""
+    cp = get_clip_path(project_id, clip_filename)
+    if not cp or not cp.exists():
+        raise HTTPException(status_code=404, detail="Clip not found")
+    return FileResponse(cp, media_type="video/mp4")
 
 
 @app.post("/project/{project_id}/export/{clip_index:int}")
