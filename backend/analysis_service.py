@@ -80,6 +80,7 @@ def _compute_eta(progress: str) -> tuple[int, str]:
         except ValueError:
             pass
     # Stage-based estimates (seconds)
+    # Rendering: 10–20+ clips × ~1–2 min/clip → ~10–30 min typical
     estimates = {
         "copying": (30, "~30 detik"),
         "download complete": (90, "~1.5 min"),
@@ -90,6 +91,7 @@ def _compute_eta(progress: str) -> tuple[int, str]:
         "detecting viral": (90, "~1.5 min"),
         "matching segments": (30, "~30 detik"),
         "generating titles": (45, "~45 detik"),
+        "rendering": (900, "~15 min"),   # 10–20 clips × ~1 min; can be 10–30 min total
         "starting": (300, "~5 min"),
     }
     for key, (secs, msg) in estimates.items():
