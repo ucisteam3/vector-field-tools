@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Film, Play, Download, Loader2, Sparkles, Settings2 } from "lucide-react";
-import { getProject, getProjectStatus, exportClipWithSettings, videoUrl, clipUrl, extractClipUrl, downloadClipExtract, type Project, type Clip } from "@/lib/api";
+import { getProject, getProjectStatus, exportClipWithSettings, videoUrl, clipUrl, fetchExtractAsBlobUrl, downloadClipExtract, type Project, type Clip } from "@/lib/api";
 import AppSidebar from "@/components/AppSidebar";
 import { useAppSettings } from "@/lib/settings-store";
 
@@ -17,9 +17,11 @@ export default function ProjectPage() {
   const [status, setStatus] = useState<{ status: string; progress?: string } | null>(null);
   const [playingClip, setPlayingClip] = useState<number | null>(null);
   const [clipLoading, setClipLoading] = useState<number | null>(null);
+  const [clipBlobUrls, setClipBlobUrls] = useState<Record<number, string>>({});
   const [exporting, setExporting] = useState<Set<number>>(new Set());
   const [downloading, setDownloading] = useState<Set<number>>(new Set());
   const playingVideoRef = useRef<HTMLVideoElement | null>(null);
+  const prefetchAbortRef = useRef<AbortController | null>(null);
   const [exportSettings] = useAppSettings();
   const displayMode = exportSettings?.export_mode ?? "face_tracking";
 
@@ -51,10 +53,49 @@ export default function ProjectPage() {
     return () => clearInterval(interval);
   }, [id, project?.status]);
 
-  const playClip = (index: number) => {
+  const [playingClipSrc, setPlayingClipSrc] = useState<string | null>(null);
+
+  const playClip = async (index: number) => {
+    const clip = project?.clips?.[index];
+    if (!clip) return;
     setPlayingClip(index);
+    if (clip.clip_path) {
+      setPlayingClipSrc(clipUrl(id, clip.clip_path.replace("clips/", "")));
+      setClipLoading(null);
+      return;
+    }
+    if (clipBlobUrls[index]) {
+      setPlayingClipSrc(clipBlobUrls[index]);
+      setClipLoading(null);
+      return;
+    }
     setClipLoading(index);
+    try {
+      const blobUrl = await fetchExtractAsBlobUrl(id, index);
+      setClipBlobUrls((prev) => ({ ...prev, [index]: blobUrl }));
+      setPlayingClipSrc(blobUrl);
+    } catch (e) {
+      console.error(e);
+    }
+    setClipLoading(null);
   };
+
+  const preFetchClip = (index: number) => {
+    const clip = project?.clips?.[index];
+    if (!clip?.clip_path && !clipBlobUrls[index]) {
+      prefetchAbortRef.current?.abort();
+      prefetchAbortRef.current = new AbortController();
+      fetchExtractAsBlobUrl(id, index).then((blobUrl) => {
+        setClipBlobUrls((prev) => ({ ...prev, [index]: blobUrl }));
+      }).catch(() => {});
+    }
+  };
+
+  const blobUrlsRef = useRef<Record<number, string>>({});
+  blobUrlsRef.current = clipBlobUrls;
+  useEffect(() => () => {
+    Object.values(blobUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
+  }, []);
 
   const handleDownloadExtract = async (index: number, title?: string) => {
     setDownloading((prev) => new Set(prev).add(index));
@@ -147,12 +188,12 @@ export default function ProjectPage() {
                       displayMode === "face_tracking" || displayMode === "podcast_smart" ? "aspect-[9/16]" : "aspect-video"
                     } bg-zinc-900`}
                   >
-                    {playingClip === i ? (
+                    {playingClip === i && playingClipSrc ? (
                       <div className="absolute inset-0 flex items-center justify-center bg-zinc-900">
                         {displayMode === "landscape_fit" ? (
                           <div className="relative w-full h-full">
                             <video
-                              src={clip.clip_path ? clipUrl(id, clip.clip_path.replace("clips/", "")) : extractClipUrl(id, i)}
+                              src={playingClipSrc}
                               className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-50"
                               aria-hidden
                               muted
@@ -160,36 +201,37 @@ export default function ProjectPage() {
                             <div className="absolute inset-0 flex items-center justify-center">
                               <video
                                 ref={playingVideoRef}
-                                src={clip.clip_path ? clipUrl(id, clip.clip_path.replace("clips/", "")) : extractClipUrl(id, i)}
+                                src={playingClipSrc}
                                 autoPlay
                                 controls
                                 playsInline
                                 className="max-h-full max-w-full object-contain rounded shadow-2xl"
-                                onLoadedData={() => setClipLoading(null)}
-                                onError={() => setClipLoading(null)}
-                                onEnded={() => { setPlayingClip(null); setClipLoading(null); }}
+                                onEnded={() => { setPlayingClip(null); setPlayingClipSrc(null); }}
                               />
                             </div>
                           </div>
                         ) : (
                           <video
                             ref={playingVideoRef}
-                            src={clip.clip_path ? clipUrl(id, clip.clip_path.replace("clips/", "")) : extractClipUrl(id, i)}
+                            src={playingClipSrc}
                             autoPlay
                             controls
                             playsInline
                             className="w-full h-full object-cover"
-                            onLoadedData={() => setClipLoading(null)}
-                            onError={() => setClipLoading(null)}
-                            onEnded={() => { setPlayingClip(null); setClipLoading(null); }}
+                            onEnded={() => { setPlayingClip(null); setPlayingClipSrc(null); }}
                           />
                         )}
                         {clipLoading === i && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/60 pointer-events-none">
                             <Loader2 className="w-12 h-12 animate-spin text-cyan-400" />
                             <span className="ml-2 text-sm text-zinc-300">Memotong klip...</span>
                           </div>
                         )}
+                      </div>
+                    ) : playingClip === i ? (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                        <Loader2 className="w-12 h-12 animate-spin text-cyan-400" />
+                        <span className="ml-2 text-sm text-zinc-300">Memotong klip...</span>
                       </div>
                     ) : (
                       <>

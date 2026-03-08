@@ -164,6 +164,18 @@ export function extractClipUrl(projectId: string, clipIndex: number): string {
   return `${API}/clip/${projectId}/extract/${clipIndex}`;
 }
 
+/** Fetch extract as blob URL for inline playback (avoids IDM interception). */
+export async function fetchExtractAsBlobUrl(
+  projectId: string,
+  clipIndex: number
+): Promise<string> {
+  const url = extractClipUrl(projectId, clipIndex);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(await res.text());
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
 export async function downloadClipExtract(
   projectId: string,
   clipIndex: number,
