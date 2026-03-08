@@ -801,7 +801,7 @@ class UISetup:
                 self.parent.save_custom_settings()
                 print(f"[BGM] File selected: {f}")
         
-        ModernButton(bgm_file_frame, text="📂 Browse", command=browse_bgm_file, 
+        ModernButton(bgm_file_frame, text="Browse", command=browse_bgm_file, 
                     width=100, bg_color=self.parent.accent_blue, hover_color="#2980b9").pack(side=tk.LEFT)
         
         # Info label

@@ -25,7 +25,7 @@ class AccordionSection:
         # Arrow indicator
         self.arrow_label = tk.Label(
             self.header, 
-            text="▶", 
+            text=">", 
             bg=bg_color, 
             fg=accent_color,
             font=('Segoe UI', 10, 'bold'),
@@ -62,13 +62,13 @@ class AccordionSection:
     def open(self):
         """Open the section"""
         self.is_open = True
-        self.arrow_label.config(text="▼")
+        self.arrow_label.config(text="v")
         self.content_frame.pack(fill='both', expand=True, padx=5, pady=(0, 5))
     
     def close(self):
         """Close the section"""
         self.is_open = False
-        self.arrow_label.config(text="▶")
+        self.arrow_label.config(text=">")
         self.content_frame.pack_forget()
     
     def get_content_frame(self):

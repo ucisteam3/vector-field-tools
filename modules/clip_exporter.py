@@ -320,7 +320,7 @@ class ClipExporter:
                 # Let's use amix with volume adjustment: VOX at 1.5, BG at 0.4
                 if has_bgm:
                     # Complex: Original Audio + Voiceover + BGM
-                    # BGM at -10dB = volume=0.316 (10^(-10/20) ≈ 0.316)
+                    # BGM at -10dB = volume=0.316 (10^(-10/20) ~= 0.316)
                     # Original at 1.0 (KEEP FULL VOLUME), VOX at 1.5, BGM at 0.316
                     audio_filter = (
                         "[1:a]volume=1.5[vox];"

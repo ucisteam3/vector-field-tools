@@ -126,7 +126,7 @@ class VideoPlayer:
         control_frame.pack_propagate(False)
         
         # Play/Pause button
-        self.play_btn = tk.Button(control_frame, text="▶ Play", command=self.toggle_play,
+        self.play_btn = tk.Button(control_frame, text="> Play", command=self.toggle_play,
                                    bg='#00d2ff', fg='#050608', font=('Segoe UI', 10, 'bold'),
                                    width=10, relief='flat', cursor='hand2',
                                    activebackground='#33e0ff', activeforeground='#050608')
@@ -170,7 +170,7 @@ class VideoPlayer:
         delay = self.AUDIO_START_DELAY
         self._play_start_wall = time.perf_counter() + delay
         self._play_start_pos = 0
-        self.play_btn.config(text="⏸ Pause", bg='#f0883e')
+        self.play_btn.config(text="|| Pause", bg='#f0883e')
         self._start_display_timer()
         threading.Thread(target=self.playback_loop, daemon=True).start()
         self.window.after(int(delay * 1000), self._start_audio)
@@ -210,7 +210,7 @@ class VideoPlayer:
         """Toggle play/pause"""
         self.is_playing = not self.is_playing
         if self.is_playing:
-            self.play_btn.config(text="⏸ Pause", bg='#f0883e')
+            self.play_btn.config(text="|| Pause", bg='#f0883e')
             delay = self.AUDIO_START_DELAY
             self._play_start_wall = time.perf_counter() + delay
             self._play_start_pos = self.current_position - self.start_time
@@ -218,7 +218,7 @@ class VideoPlayer:
             if self.window and self.window.winfo_exists():
                 self.window.after(int(delay * 1000), self._start_audio)
         else:
-            self.play_btn.config(text="▶ Play", bg='#00d2ff')
+            self.play_btn.config(text="> Play", bg='#00d2ff')
             self._stop_display_timer()
             self._stop_audio()
     
@@ -256,7 +256,7 @@ class VideoPlayer:
         """Main thread only: set tombol ke state Play."""
         try:
             if not self.is_closed and self.play_btn and self.play_btn.winfo_exists():
-                self.play_btn.config(text="▶ Play", bg='#00d2ff')
+                self.play_btn.config(text="> Play", bg='#00d2ff')
         except tk.TclError:
             pass
 
