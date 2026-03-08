@@ -57,6 +57,22 @@ from backend.clip_service import export_clip, export_all_clips
 app = FastAPI(title="AI Video Clipper", version="1.0")
 
 
+def _log_gpu_status():
+    """Log GPU/CUDA availability at startup."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            name = torch.cuda.get_device_name(0) if torch.cuda.device_count() else "NVIDIA GPU"
+            print(f"[GPU] CUDA tersedia: {name} - Whisper & ML models akan menggunakan GPU")
+        else:
+            print("[GPU] CUDA tidak terdeteksi - menggunakan CPU (pastikan PyTorch+CUDA terinstall)")
+    except ImportError:
+        print("[GPU] PyTorch tidak terinstall - GPU tidak tersedia")
+
+
+_log_gpu_status()
+
+
 @app.exception_handler(Exception)
 def global_exception_handler(request, exc):
     """Log and return 500 for unhandled exceptions. Let HTTPException pass through."""

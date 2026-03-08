@@ -248,6 +248,10 @@ class WebAppContext:
     def transcribe_video_with_whisper(self, video_path):
         return self.transcription_engine.transcribe_video_with_whisper(video_path)
 
+    def transcribe_to_segments(self, video_path):
+        """Whisper with CUDA → {idx: {start, end, text}} for AI analysis."""
+        return self.transcription_engine.transcribe_to_segments(video_path)
+
     def get_video_duration(self, video_path):
         return self.video_analyzer.get_video_duration(video_path)
 

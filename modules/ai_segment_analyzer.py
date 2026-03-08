@@ -215,13 +215,22 @@ class AISegmentAnalyzer:
             return 0.5
 
     # --- Optional ML models (embedding + emotion) ---
+    def _get_device(self):
+        """Return 'cuda' if available, else 'cpu'."""
+        try:
+            import torch
+            return "cuda" if torch.cuda.is_available() else "cpu"
+        except Exception:
+            return "cpu"
+
     def _get_embedding_model(self):
         """Lazy-load sentence-transformers model. Returns None if unavailable."""
         global _EMBEDDING_MODEL
         if _EMBEDDING_MODEL is None:
             try:
                 from sentence_transformers import SentenceTransformer
-                _EMBEDDING_MODEL = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+                device = self._get_device()
+                _EMBEDDING_MODEL = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", device=device)
             except Exception:
                 _EMBEDDING_MODEL = False  # mark as attempted
         return _EMBEDDING_MODEL if _EMBEDDING_MODEL else None
@@ -232,12 +241,18 @@ class AISegmentAnalyzer:
         if _EMOTION_MODEL is None:
             try:
                 from transformers import AutoModelForSequenceClassification, AutoTokenizer
+                device = self._get_device()
                 _EMOTION_TOKENIZER = AutoTokenizer.from_pretrained(
                     "cardiffnlp/twitter-roberta-base-emotion"
                 )
                 _EMOTION_MODEL = AutoModelForSequenceClassification.from_pretrained(
                     "cardiffnlp/twitter-roberta-base-emotion"
                 )
+                try:
+                    import torch
+                    _EMOTION_MODEL = _EMOTION_MODEL.to(device)
+                except Exception:
+                    pass
             except Exception:
                 _EMOTION_MODEL = False
                 _EMOTION_TOKENIZER = False
@@ -289,7 +304,9 @@ class AISegmentAnalyzer:
             return 0
         try:
             import torch
+            device = self._get_device()
             inputs = tokenizer(text[:512], return_tensors="pt", truncation=True, padding=True)
+            inputs = {k: v.to(device) for k, v in inputs.items()}
             with torch.no_grad():
                 out = model(**inputs)
             # Labels: anger, joy, optimism, sadness
@@ -311,10 +328,12 @@ class AISegmentAnalyzer:
         chunk = 16
         try:
             import torch
+            device = self._get_device()
             for i in range(0, len(texts), chunk):
                 batch = texts[i:i + chunk]
                 truncated = [t[:512] if t else "" for t in batch]
                 inputs = tokenizer(truncated, return_tensors="pt", truncation=True, padding=True)
+                inputs = {k: v.to(device) for k, v in inputs.items()}
                 with torch.no_grad():
                     out = model(**inputs)
                 logits = out.logits

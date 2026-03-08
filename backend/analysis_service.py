@@ -224,13 +224,25 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None):
             if not has_chapter_format:
                 if not manual_text:
                     prog("Transcribing with AI...")
-                    audio_path = ctx.download_youtube_audio(youtube_url)
-                    if audio_path and os.path.exists(audio_path):
-                        transcriptions = ctx.transcribe_audio_file(audio_path)
-                    else:
-                        transcriptions = ctx.extract_audio_and_transcribe(str(video_dest))
-                    if transcriptions:
-                        ctx.sub_transcriptions = transcriptions
+                    transcriptions = None
+                    # Prefer Whisper+CUDA when available (much faster than Google Speech)
+                    try:
+                        import torch
+                        use_whisper_gpu = torch.cuda.is_available()
+                    except Exception:
+                        use_whisper_gpu = False
+                    if use_whisper_gpu:
+                        transcriptions = ctx.transcribe_to_segments(str(video_dest))
+                        if transcriptions:
+                            ctx.sub_transcriptions = transcriptions
+                    if not transcriptions:
+                        audio_path = ctx.download_youtube_audio(youtube_url)
+                        if audio_path and os.path.exists(audio_path):
+                            transcriptions = ctx.transcribe_audio_file(audio_path)
+                        else:
+                            transcriptions = ctx.extract_audio_and_transcribe(str(video_dest))
+                        if transcriptions:
+                            ctx.sub_transcriptions = transcriptions
                 else:
                     transcriptions = ctx.sub_transcriptions or ctx.parse_manual_transcript(manual_text)
                     if transcriptions and not ctx.sub_transcriptions:

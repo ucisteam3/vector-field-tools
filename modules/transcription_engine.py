@@ -101,9 +101,10 @@ class TranscriptionEngine:
             model = self._get_whisper_model(model_name, device)
             
             self.parent.progress_var.set("Whisper: Sedang mengetik transkrip...")
-            print("  [WHISPER] Sedang memproses... (Bisa agak lama)")
-            print("  [TIP] Whisper berjalan di CPU. Proses ini membutuhkan waktu sekitar 20-50% dari durasi video.")
-            print("  [INFO] Mohon tunggu, teks akan muncul secara otomatis setelah selesai.")
+            if device == "cuda":
+                print("  [WHISPER] Memproses di GPU (NVIDIA CUDA)...")
+            else:
+                print("  [WHISPER] Memproses di CPU (20-50% durasi video)...")
             
             result = model.transcribe(str(audio_path), verbose=False)
             full_text = result["text"]
@@ -118,4 +119,47 @@ class TranscriptionEngine:
             
         except Exception as e:
             print(f"  [WHISPER FAILED] {e}")
+            return None
+
+    def transcribe_to_segments(self, video_path):
+        """
+        Transcribe video with Whisper, return dict {idx: {start, end, text}} for AI analysis.
+        Uses CUDA when available for faster processing.
+        """
+        if not WHISPER_AVAILABLE:
+            return None
+        try:
+            audio_path = Path("temp") / "whisper_temp.wav"
+            audio_path.parent.mkdir(parents=True, exist_ok=True)
+            cmd = [
+                "ffmpeg", "-y", "-i", str(video_path),
+                "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
+                str(audio_path)
+            ]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000 if os.name == "nt" else 0)
+            if not audio_path.exists():
+                return None
+
+            device = "cuda" if CUDA_AVAILABLE else "cpu"
+            model_name = "medium" if device == "cuda" else "small"
+            models_root = os.path.join(os.getcwd(), "assets", "models")
+            os.makedirs(models_root, exist_ok=True)
+            if self.parent and hasattr(self.parent, "progress_var"):
+                self.parent.progress_var.set(f"Whisper ({device}): Transcribing...")
+            print(f"  [WHISPER] Using '{model_name}' on {device}")
+            model = self._get_whisper_model(model_name, device, download_root=models_root)
+            result = model.transcribe(str(audio_path), verbose=False)
+            try:
+                audio_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+            segments = result.get("segments") or []
+            out = {}
+            for i, s in enumerate(segments):
+                if s.get("text", "").strip():
+                    out[i] = {"start": float(s.get("start", 0)), "end": float(s.get("end", 0)), "text": s["text"].strip()}
+            return out if out else None
+        except Exception as e:
+            print(f"  [WHISPER SEGMENTS FAILED] {e}")
             return None
