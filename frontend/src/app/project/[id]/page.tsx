@@ -102,21 +102,15 @@ export default function ProjectPage() {
       const { clip_path } = await exportClipWithSettings(id, index, exportSettings);
       const filename = (clip_path || "").replace("clips/", "");
       if (!filename) throw new Error("Export gagal");
-      const url = playClipUrl(id, filename);
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Gagal memuat file: ${res.status}`);
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
+      const downloadName = (clip.title || `clip_${index + 1}`).replace(/[^a-zA-Z0-9 _-]/g, "").trim().slice(0, 50) + ".mp4";
+      const url = playClipUrl(id, filename, true);
       const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = (clip.title || `clip_${index + 1}`).replace(/[^a-zA-Z0-9 _-]/g, "").trim().slice(0, 50) + ".mp4";
+      a.href = url;
+      a.download = downloadName;
       a.style.display = "none";
       document.body.appendChild(a);
       a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(blobUrl);
-      }, 100);
+      setTimeout(() => document.body.removeChild(a), 100);
       loadProject();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Export gagal. Cek konsol untuk detail.");

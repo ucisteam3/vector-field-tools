@@ -163,8 +163,9 @@ export function clipUrl(projectId: string, clipFilename: string): string {
 }
 
 /** URL untuk Play - lewat proxy /stream-clip (bukan /api) agar tidak trigger IDM */
-export function playClipUrl(projectId: string, clipFilename: string): string {
-  return `/stream-clip?project=${encodeURIComponent(projectId)}&file=${encodeURIComponent(clipFilename)}`;
+export function playClipUrl(projectId: string, clipFilename: string, forDownload = false): string {
+  const base = `/stream-clip?project=${encodeURIComponent(projectId)}&file=${encodeURIComponent(clipFilename)}`;
+  return forDownload ? `${base}&download=1` : base;
 }
 
 /**
