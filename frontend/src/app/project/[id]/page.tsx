@@ -134,13 +134,9 @@ export default function ProjectPage() {
                     ) : (
                       <>
                         {clip.clip_path ? (
-                          <video
-                            src={clipUrl(id, clip.clip_path.replace("clips/", ""))}
-                            className="w-full h-full object-cover"
-                            muted
-                            preload="metadata"
-                            playsInline
-                          />
+                          <div className="w-full h-full bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center">
+                            <Play className="w-16 h-16 text-white/30" />
+                          </div>
                         ) : (
                           <div className="absolute inset-0 flex items-center justify-center bg-zinc-800">
                             <span className="text-xs text-zinc-500">Rendering...</span>
