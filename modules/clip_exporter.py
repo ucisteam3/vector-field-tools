@@ -184,7 +184,11 @@ class ClipExporter:
 
         # [INSTANT START] Check for leading silence
         # Only if audio is enabled? Assumed yes.
-        silence_offset = self.detect_leading_silence(self.parent.video_path, result['start'])
+        try:
+            silence_offset = self.detect_leading_silence(self.parent.video_path, result['start'])
+        except Exception as e:
+            print(f"  [WARN] detect_leading_silence failed: {e}")
+            silence_offset = 0
         if silence_offset > 0:
             print(f"  [INSTANT START] Skipping first {silence_offset:.2f}s of silence")
             result['start'] += silence_offset

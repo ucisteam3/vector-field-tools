@@ -83,7 +83,17 @@ export async function exportClipWithSettings(
       settings: settings ?? undefined,
     }),
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const text = await res.text();
+    try {
+      const j = JSON.parse(text);
+      const d = j?.detail;
+      throw new Error(typeof d === "string" ? d : text || `Error ${res.status}`);
+    } catch (e) {
+      if (e instanceof Error && e.message.length > 2) throw e;
+      throw new Error(text || `Export gagal (${res.status})`);
+    }
+  }
   return res.json();
 }
 

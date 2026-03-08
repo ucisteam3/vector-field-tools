@@ -408,16 +408,46 @@ def export_clip_with_settings(req: ExportClipRequest):
     """Export a clip with full settings. project_id, clip_id (index), settings."""
     try:
         fn = export_clip(req.project_id, req.clip_id, req.settings)
-        if not fn:
-            raise HTTPException(status_code=404, detail="Export failed")
-        return {"clip_path": f"clips/{fn}"}
+        if fn:
+            return {"clip_path": f"clips/{fn}"}
     except HTTPException:
         raise
     except Exception as e:
         print(f"[SERVER] export_clip error: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+    # Fallback: simple extract (-c copy) when full export fails
+    try:
+        meta = get_project(req.project_id)
+        if not meta or not meta.get("clips"):
+            raise HTTPException(status_code=404, detail="Project not found")
+        clips = meta["clips"]
+        if req.clip_id < 0 or req.clip_id >= len(clips):
+            raise HTTPException(status_code=404, detail="Clip not found")
+        clip_info = clips[req.clip_id]
+        start = float(clip_info.get("start", 0))
+        end = float(clip_info.get("end", 0))
+        if end <= start:
+            raise HTTPException(status_code=400, detail="Invalid clip duration")
+        vp = get_video_path(req.project_id)
+        if not vp or not vp.exists():
+            raise HTTPException(status_code=404, detail="Video not found")
+        title = (clip_info.get("title") or f"clip_{req.clip_id + 1}")[:80]
+        safe_name = "".join(c for c in title if c.isalnum() or c in (" ", "-", "_")).strip() or f"clip_{req.clip_id + 1}"
+        out_dir = PROJECTS_DIR / req.project_id / "clips"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{safe_name}.mp4"
+        import subprocess
+        duration = end - start
+        cmd = ["ffmpeg", "-y", "-i", str(vp), "-ss", str(start), "-t", str(duration), "-c", "copy", "-avoid_negative_ts", "1", str(out_path)]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, creationflags=0x08000000 if __import__("os").name == "nt" else 0)
+        if result.returncode == 0 and out_path.exists():
+            return {"clip_path": f"clips/{safe_name}.mp4"}
+    except HTTPException:
+        raise
+    except Exception as fallback_err:
+        print(f"[SERVER] Fallback extract failed: {fallback_err}")
+    raise HTTPException(status_code=500, detail="Export gagal. Cek log backend untuk detail.")
 
 
 # Upload directories
