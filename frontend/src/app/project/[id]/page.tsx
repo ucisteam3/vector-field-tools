@@ -18,9 +18,8 @@ export default function ProjectPage() {
   const [playingClip, setPlayingClip] = useState<number | null>(null);
   const [exporting, setExporting] = useState<Set<number>>(new Set());
   const [downloading, setDownloading] = useState<Set<number>>(new Set());
-  const previewEndRef = useRef<{ index: number; end: number } | null>(null);
+  const playingVideoRef = useRef<HTMLVideoElement | null>(null);
   const [exportSettings] = useAppSettings();
-  const videoRef = useRef<HTMLVideoElement>(null);
 
   const loadProject = async () => {
     try {
@@ -50,41 +49,17 @@ export default function ProjectPage() {
     return () => clearInterval(interval);
   }, [id, project?.status]);
 
-  const seekTo = (start: number) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = start;
-      videoRef.current.play();
+  const playClip = (index: number) => {
+    setPlayingClip(index);
+  };
+
+  const handleClipTimeUpdate = (index: number, end: number) => {
+    const v = playingVideoRef.current;
+    if (v && v.currentTime >= end) {
+      v.pause();
+      setPlayingClip(null);
     }
   };
-
-  const playClip = (clip: Clip, index: number) => {
-    if (clip.clip_path) setPlayingClip(index);
-    else previewClip(index);
-  };
-
-  const previewClip = (index: number) => {
-    const clip = project?.clips?.[index];
-    if (!clip || !videoRef.current) return;
-    videoRef.current.currentTime = clip.start;
-    videoRef.current.play();
-    previewEndRef.current = { index, end: clip.end };
-  };
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !previewEndRef.current) return;
-    const handleTimeUpdate = () => {
-      const p = previewEndRef.current;
-      if (p && video.currentTime >= p.end) {
-        video.pause();
-        previewEndRef.current = null;
-      }
-    };
-    video.addEventListener("timeupdate", handleTimeUpdate);
-    return () => {
-      video.removeEventListener("timeupdate", handleTimeUpdate);
-    };
-  }, [project?.clips]);
 
   const handleDownloadExtract = async (index: number, title?: string) => {
     setDownloading((prev) => new Set(prev).add(index));
