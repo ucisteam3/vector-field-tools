@@ -1,6 +1,6 @@
 """
 FastAPI server for local AI video clipping web app.
-Run: python server.py
+Run: python server.py  (or: run_web.bat)
 Then open: http://localhost:3000 (frontend) and proxy API to http://localhost:8000
 """
 
@@ -8,58 +8,13 @@ import os
 import sys
 from pathlib import Path
 
-# Windows encoding fix: MUST run before any other output
-# 1. Force UTF-8 on stdout/stderr
-# 2. Wrap with SafeStream that replaces \u2192 etc AND catches any encode error
-_REPLACE = (
-    ("\u2192", "->"),
-    ("\u27a1", "->"),
-    ("\u2713", "OK"),
-    ("\u2714", "OK"),
-    ("\u2717", "X"),
-    ("\u26a0", "!"),
-)
-
-
-def _safe_encode(s: str) -> str:
-    for old, new in _REPLACE:
-        s = s.replace(old, new)
-    return s
-
-
-class _SafeStream:
-    def __init__(self, stream):
-        self._stream = stream
-
-    def write(self, s):
-        if isinstance(s, str):
-            s = _safe_encode(s)
-            try:
-                self._stream.write(s)
-            except UnicodeEncodeError:
-                self._stream.write(s.encode("ascii", errors="replace").decode("ascii"))
-        else:
-            self._stream.write(s)
-
-    def flush(self):
-        self._stream.flush()
-
-    def __getattr__(self, k):
-        return getattr(self._stream, k)
-
-
-if hasattr(sys.stdout, "reconfigure"):
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        if sys.stderr is not sys.stdout and hasattr(sys.stderr, "reconfigure"):
-            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except (OSError, AttributeError, TypeError):
-        pass
-
+# Windows encoding fix - MUST run before any other output (prevents \u2192 charmap errors)
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 try:
-    sys.stdout = _SafeStream(sys.stdout)
-    if sys.stderr is not sys.stdout:
-        sys.stderr = _SafeStream(sys.stderr)
+    from backend.encoding_fix import apply
+    apply()
 except Exception:
     pass
 

@@ -111,6 +111,11 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None):
     """Run full analysis in background. Updates project metadata on completion."""
     def _run():
         _ensure_sys_path()
+        try:
+            from backend.encoding_fix import apply
+            apply()
+        except Exception:
+            pass
         from backend.project_manager import get_project, update_project, get_project_dir, PROJECTS_DIR
 
         project_dir = get_project_dir(project_id)
