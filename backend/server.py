@@ -170,11 +170,59 @@ def serve_video(project_id: str):
 
 @app.get("/clip/{project_id}/{clip_filename:path}")
 def serve_clip(project_id: str, clip_filename: str):
-    """Serve a clip video file."""
+    """Serve a clip video file (exported clip by filename)."""
     cp = get_clip_path(project_id, clip_filename)
     if not cp or not cp.exists():
         raise HTTPException(status_code=404, detail="Clip not found")
     return FileResponse(cp, media_type="video/mp4")
+
+
+@app.get("/clip/{project_id}/extract/{clip_index:int}")
+def extract_clip_segment(project_id: str, clip_index: int):
+    """
+    Extract clip segment from source video using ffmpeg.
+    ffmpeg -ss start -to end -i video.mp4 -c copy clip.mp4
+    Returns the generated clip file for download.
+    """
+    import subprocess
+    import tempfile
+    meta = get_project(project_id)
+    if not meta or not meta.get("clips"):
+        raise HTTPException(status_code=404, detail="Project not found")
+    clips = meta["clips"]
+    if clip_index < 0 or clip_index >= len(clips):
+        raise HTTPException(status_code=404, detail="Clip not found")
+    vp = get_video_path(project_id)
+    if not vp or not vp.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+    clip_info = clips[clip_index]
+    start = float(clip_info.get("start", 0))
+    end = float(clip_info.get("end", 0))
+    if end <= start:
+        raise HTTPException(status_code=400, detail="Invalid clip duration")
+    title = (clip_info.get("title") or f"clip_{clip_index + 1}")[:80]
+    safe_name = "".join(c for c in title if c.isalnum() or c in (" ", "-", "_")).strip() or f"clip_{clip_index + 1}"
+    out_dir = PROJECTS_DIR / project_id / "clips"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{safe_name}_{clip_index}.mp4"
+    try:
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(start),
+            "-to", str(end),
+            "-i", str(vp),
+            "-c", "copy",
+            "-avoid_negative_ts", "1",
+            str(out_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, creationflags=0x08000000 if __import__("os").name == "nt" else 0)
+        if result.returncode != 0 or not out_path.exists():
+            raise HTTPException(status_code=500, detail="FFmpeg extraction failed")
+        return FileResponse(out_path, media_type="video/mp4", filename=f"{safe_name}.mp4")
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Extraction timeout")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/project/{project_id}/export/{clip_index:int}")
