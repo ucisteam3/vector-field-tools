@@ -1,10 +1,16 @@
 const API = "/api";
 
-export async function analyzeVideo(youtubeUrl: string): Promise<{ project_id: string; title: string }> {
+export async function analyzeVideo(
+  youtubeUrl: string,
+  exportSettings?: Record<string, unknown>
+): Promise<{ project_id: string; title: string }> {
   const res = await fetch(`${API}/analyze`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ youtube_url: youtubeUrl }),
+    body: JSON.stringify({
+      youtube_url: youtubeUrl,
+      export_settings: exportSettings ?? undefined,
+    }),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();

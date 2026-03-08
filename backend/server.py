@@ -117,6 +117,8 @@ def analyze(req: AnalyzeRequest):
         pass
     meta = create_project(title=title, youtube_url=url)
     project_id = meta["project_id"]
+    if req.export_settings:
+        update_project(project_id, export_settings=req.export_settings)
     update_project(project_id, status="analyzing")
     run_analysis(project_id, url)
     return {"project_id": project_id, "title": title}

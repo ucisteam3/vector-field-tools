@@ -6,8 +6,10 @@ import { motion } from "framer-motion";
 import { Youtube, Plus, Film, Calendar, Loader2, ExternalLink, Trash2, ShieldCheck, Upload } from "lucide-react";
 import AppSidebar from "@/components/AppSidebar";
 import { analyzeVideo, getProjects, getProjectStatus, deleteProject, retryProject, videoUrl, uploadCookies, getCookiesStatus, type Project } from "@/lib/api";
+import { useAppSettings } from "@/lib/settings-store";
 
 export default function HomePage() {
+  const [exportSettings] = useAppSettings();
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -64,7 +66,7 @@ export default function HomePage() {
     if (!url.trim()) return;
     setLoading(true);
     try {
-      const { project_id, title } = await analyzeVideo(url.trim());
+      const { project_id, title } = await analyzeVideo(url.trim(), exportSettings);
       // Add new project to list without redirect
       const newProj: Project = {
         project_id,

@@ -147,15 +147,18 @@ def export_clip(project_id: str, clip_index: int, settings: Optional[dict] = Non
     return None
 
 
-def export_all_clips(project_id: str) -> list[str]:
+def export_all_clips(project_id: str, settings: Optional[dict] = None) -> list[str]:
     """Export all clips for a project. Returns list of clip filenames."""
     from backend.project_manager import get_project
     meta = get_project(project_id)
     if not meta or not meta.get("clips"):
         return []
+    merged = meta.get("export_settings") or {}
+    if settings:
+        merged = {**merged, **settings}
     exported = []
     for i in range(len(meta["clips"])):
-        fn = export_clip(project_id, i)
+        fn = export_clip(project_id, i, merged if merged else None)
         if fn:
             exported.append(fn)
     return exported
