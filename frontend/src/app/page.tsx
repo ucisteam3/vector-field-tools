@@ -104,6 +104,25 @@ export default function HomePage() {
     }
   };
 
+  const handleRetry = async (projectId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setRetrying(projectId);
+    try {
+      await retryProject(projectId);
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.project_id === projectId ? { ...p, status: "analyzing" as const, error: null } : p
+        )
+      );
+      setStatusCache((c) => ({ ...c, [projectId]: { progress: "Starting...", eta_message: "~5 min" } }));
+    } catch (err) {
+      alert(String(err));
+    } finally {
+      setRetrying(null);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-[#0a0c10] text-white">
       <aside className="w-64 border-r border-zinc-700 bg-[#0d1117] fixed left-0 top-0 bottom-0 flex flex-col z-10">
@@ -171,7 +190,7 @@ export default function HomePage() {
                 Cookies YouTube:
               </span>
               {cookiesStatus?.exists ? (
-                <span className="text-cyan-400">✓ {cookiesStatus.size_kb} KB aktif</span>
+                <span className="text-cyan-400">OK {cookiesStatus.size_kb} KB aktif</span>
               ) : (
                 <label className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-dashed border-zinc-600 hover:border-cyan-500/50 cursor-pointer text-zinc-400 hover:text-cyan-400 transition-colors">
                   <Upload className="w-4 h-4" />
@@ -316,7 +335,16 @@ export default function HomePage() {
                           </div>
                         )}
                         {p.status === "error" && (
-                          <div className="mt-1 text-red-400 text-xs truncate">{p.error}</div>
+                          <div className="mt-1 flex items-center gap-2">
+                            <span className="text-red-400 text-xs truncate flex-1 min-w-0">{p.error}</span>
+                            <button
+                              onClick={(e) => handleRetry(p.project_id, e)}
+                              disabled={retrying === p.project_id || !p.youtube_url}
+                              className="text-cyan-400 hover:text-cyan-300 text-xs shrink-0 disabled:opacity-50"
+                            >
+                              {retrying === p.project_id ? "..." : "Retry"}
+                            </button>
+                          </div>
                         )}
                         {p.status === "ready" && (
                           <div className="mt-1 text-zinc-500 text-xs">{p.clips?.length ?? 0} clips</div>

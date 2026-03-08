@@ -351,7 +351,7 @@ export default function ExportSettingsPanel({ settings, onChange }: Props) {
               </label>
               {settings.watermark_image_path && (
                 <p className="mt-1 text-xs text-cyan-400 truncate" title={settings.watermark_image_path}>
-                  ✓ {settings.watermark_image_path.split("/").pop()}
+                  OK {settings.watermark_image_path.split("/").pop()}
                 </p>
               )}
               <div className="mt-2 grid grid-cols-2 gap-2">
@@ -406,7 +406,7 @@ export default function ExportSettingsPanel({ settings, onChange }: Props) {
             </label>
             {settings.bgm_file_path && (
               <p className="mt-1 text-xs text-cyan-400 truncate" title={settings.bgm_file_path}>
-                ✓ {settings.bgm_file_path.split("/").pop()}
+                OK {settings.bgm_file_path.split("/").pop()}
               </p>
             )}
           </div>
