@@ -85,6 +85,7 @@ app.add_middleware(
 
 class AnalyzeRequest(BaseModel):
     youtube_url: str
+    export_settings: Optional[dict[str, Any]] = None
 
 
 class ExportClipRequest(BaseModel):
