@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Youtube, Plus, Film, Calendar, Loader2, ExternalLink, Trash2, ShieldCheck, Upload } from "lucide-react";
+import { Youtube, Plus, Film, Calendar, Loader2, Trash2, ShieldCheck, Upload } from "lucide-react";
 import AppSidebar from "@/components/AppSidebar";
 import { analyzeVideo, getProjects, getProjectStatus, deleteProject, retryProject, videoUrl, uploadCookies, getCookiesStatus, type Project } from "@/lib/api";
 
@@ -326,7 +326,7 @@ export default function HomePage() {
                         <div className="mt-1.5 flex items-center gap-2">
                           <span className="text-red-400 text-xs line-clamp-1 flex-1">{p.error}</span>
                           <button
-                            onClick={(e) => { e.preventDefault(); handleRetry(p.project_id, e); }}
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRetry(p.project_id, e); }}
                             disabled={retrying === p.project_id || !p.youtube_url}
                             className="text-cyan-400 hover:text-cyan-300 text-xs shrink-0 disabled:opacity-50"
                           >
