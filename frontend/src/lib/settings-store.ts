@@ -7,6 +7,7 @@ import {
 } from "./export-settings";
 
 const STORAGE_KEY = "ai-clipper-app-settings";
+const VALID_MODES = ["landscape_fit", "face_tracking", "podcast_smart"] as const;
 
 function loadFromStorage(): ExportSettings {
   if (typeof window === "undefined") return { ...DEFAULT_EXPORT_SETTINGS };
@@ -14,7 +15,11 @@ function loadFromStorage(): ExportSettings {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULT_EXPORT_SETTINGS };
     const parsed = JSON.parse(raw) as Partial<ExportSettings>;
-    return { ...DEFAULT_EXPORT_SETTINGS, ...parsed };
+    const merged = { ...DEFAULT_EXPORT_SETTINGS, ...parsed };
+    if (!VALID_MODES.includes(merged.export_mode as (typeof VALID_MODES)[number])) {
+      merged.export_mode = DEFAULT_EXPORT_SETTINGS.export_mode;
+    }
+    return merged;
   } catch {
     return { ...DEFAULT_EXPORT_SETTINGS };
   }
