@@ -105,8 +105,8 @@ export default function ExportSettingsPanel({ settings, onChange, embedded = fal
 
   const content = (
     <div className={embedded ? "flex-1 min-h-0 overflow-y-auto p-3 space-y-0" : "flex-1 overflow-y-auto p-4 space-y-0"}>
-        {/* Export Mode */}
-        <Section title="Export Mode" defaultOpen>
+        {/* Display/Preview Mode */}
+        <Section title="Mode Tampilan (Preview & Export)" defaultOpen>
           <div>
             <label className="block text-xs text-zinc-500 mb-1">Mode</label>
             <select
