@@ -196,7 +196,7 @@ export default function ProjectPage() {
                         {clip.clip_path ? (
                           <video
                             src={clipUrl(id, clip.clip_path.replace("clips/", ""))}
-                            className="w-full h-full object-cover"
+                            className={`w-full h-full ${displayMode === "landscape_fit" ? "object-contain" : "object-cover"}`}
                             muted
                             preload="metadata"
                             playsInline
@@ -204,7 +204,7 @@ export default function ProjectPage() {
                         ) : (
                           <video
                             src={videoUrl(id)}
-                            className="w-full h-full object-cover"
+                            className={`w-full h-full ${displayMode === "landscape_fit" ? "object-contain" : "object-cover"}`}
                             muted
                             preload="metadata"
                             playsInline
