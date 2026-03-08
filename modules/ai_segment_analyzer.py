@@ -31,9 +31,17 @@ class AISegmentAnalyzer:
         Initialize AI Segment Analyzer
         
         Args:
-            parent: Reference to YouTubeHeatmapAnalyzer instance for accessing AI clients and settings
+            parent: Reference to YouTubeHeatmapAnalyzer or WebAppContext (can be None)
         """
         self.parent = parent
+
+    def safe_parent_call(self, method, *args, **kwargs):
+        """Safely call a parent method if it exists. Returns None if parent=None or method missing."""
+        if self.parent is None:
+            return None
+        if hasattr(self.parent, method):
+            return getattr(self.parent, method)(*args, **kwargs)
+        return None
 
     # [MOMENT-FIRST] Window scanning for short viral moments
     WINDOW_SIZE_SEC = 18
@@ -576,7 +584,9 @@ class AISegmentAnalyzer:
         if not vtt_path or not os.path.exists(vtt_path):
             return ""
         try:
-            cues = self.parent.parse_vtt(vtt_path)
+            cues = self.safe_parent_call("parse_vtt", vtt_path)
+            if cues is None:
+                return ""
             return self._get_transcript_for_clip_range(clip_start, clip_end, cues)
         except Exception:
             return ""
@@ -823,7 +833,7 @@ class AISegmentAnalyzer:
         # [FALLBACK] No sub_transcriptions: use GPT
         if not openai_segments and getattr(self.parent, "openai_available", False):
             transcript_for_ai = formatted_transcript.strip()[:120000]
-            openai_segments = self.parent.detect_viral_segments_with_openai(transcript_for_ai)
+            openai_segments = self.safe_parent_call("detect_viral_segments_with_openai", transcript_for_ai)
             if openai_segments:
                 for seg in openai_segments:
                     s, e = float(seg.get("start", 0)), float(seg.get("end", 0))
@@ -858,7 +868,7 @@ class AISegmentAnalyzer:
             # Build segment transcript early (needed for hook fallback)
             seg_text_parts = []
             if getattr(self.parent, "sub_transcriptions", None):
-                for sub_item in self.parent.sub_transcriptions.values():
+                for sub_item in (getattr(self.parent, "sub_transcriptions", None) or {}).values():
                     sub_start = sub_item["start"]
                     sub_end = sub_item["end"]
                     if (sub_start >= start_sec - PADDING_SEC and sub_start <= end_sec + PADDING_SEC) or (
@@ -881,10 +891,12 @@ class AISegmentAnalyzer:
             hook_score_val = 50
             if hook_script:
                 try:
-                    refined_hook, hook_score_val = self.parent.refine_and_score_hook_openai(hook_script, max_attempts=1)
+                    refined_hook, hook_score_val = self.safe_parent_call("refine_and_score_hook_openai", hook_script, max_attempts=1) or (hook_script, 0.5)
                     if refined_hook:
                         hook_text = refined_hook
-                    hook_score_val = self.parent.apply_hook_trigger_boost(hook_text, hook_score_val)
+                    boosted = self.safe_parent_call("apply_hook_trigger_boost", hook_text, hook_score_val)
+                    if boosted is not None:
+                        hook_score_val = boosted
                 except Exception:
                     pass
 
@@ -900,17 +912,19 @@ class AISegmentAnalyzer:
             if not title and full_seg_text:
                 existing = [v.get("text") for v in viral_segments.values() if v.get("text")]
                 cleaned_seg = self._clean_filler_words(full_seg_text)
-                clickbait = self.parent.generate_clickbait_title(
+                clickbait = self.safe_parent_call(
+                    "generate_clickbait_title",
                     cleaned_seg or full_seg_text, existing_titles=existing, max_attempts=5, strict_content=True
                 )
                 if clickbait:
                     # Title semantic validation: regenerate if title does not match content
                     sim = self._title_segment_similarity(clickbait, full_seg_text)
                     if sim < 0.35:
-                        clickbait = self.parent.generate_clickbait_title(
+                        clickbait = self.safe_parent_call(
+                            "generate_clickbait_title",
                             cleaned_seg or full_seg_text, existing_titles=existing, max_attempts=3, strict_content=True
-                        )
-                    title = self.parent.clean_viral_title(clickbait) if clickbait else ""
+                        ) or clickbait
+                    title = self.safe_parent_call("clean_viral_title", clickbait) if clickbait else ""
             if not title:
                 title = (full_seg_text or "").strip()
                 title = (title[:52].rstrip() + "...") if len(title) > 55 else title
@@ -1030,8 +1044,9 @@ class AISegmentAnalyzer:
 
     def generate_segment_titles_parallel(self):
         """Generate titles with OpenAI only (no Groq). Used when segments came from heatmap, not from OpenAI detection."""
+        analysis_results = getattr(self.parent, "analysis_results", None) or []
         valid_segments = [
-            res for res in (self.parent.analysis_results or [])
+            res for res in analysis_results
             if (res.get("full_topic") or res.get("topic")) and not (res.get("full_topic") or "").startswith("[")
         ]
         if not valid_segments:
@@ -1044,13 +1059,14 @@ class AISegmentAnalyzer:
             if not text:
                 continue
             cleaned = self._clean_filler_words(text)
-            existing = [r.get("topic") or r.get("clickbait_title") for r in self.parent.analysis_results[:i]]
-            title = self.parent.generate_clickbait_title(cleaned or text, existing_titles=existing, max_attempts=2, strict_content=True)
+            existing = [r.get("topic") or r.get("clickbait_title") for r in analysis_results[:i]]
+            title = self.safe_parent_call("generate_clickbait_title", cleaned or text, existing_titles=existing, max_attempts=2, strict_content=True)
             if title and title != "Untitled Clip":
                 segment["topic"] = title
                 segment["clickbait_title"] = title
-            self.parent.progress_var.set(f"Generating titles... ({i+1}/{total})")
-            if getattr(self.parent, "root", None):
+            if self.parent and hasattr(self.parent, "progress_var"):
+                self.parent.progress_var.set(f"Generating titles... ({i+1}/{total})")
+            if self.parent and getattr(self.parent, "root", None):
                 self.parent.root.update()
 
     def match_segments_with_content(self, segments, transcriptions):
