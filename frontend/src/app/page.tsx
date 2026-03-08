@@ -240,134 +240,114 @@ export default function HomePage() {
           ) : projects.length === 0 ? (
             <p className="text-zinc-500">No projects yet. Paste a YouTube URL above to get started.</p>
           ) : (
-            <div className="flex flex-col gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
               {projects.map((p, i) => (
                 <motion.div
                   key={p.project_id}
-                  initial={{ opacity: 0, y: 6 }}
+                  initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.03 }}
+                  className="rounded-xl border border-zinc-700 bg-zinc-800/50 overflow-hidden hover:bg-zinc-700/50 transition-colors group relative"
                 >
-                  <div className="flex items-center gap-4 rounded-xl border border-zinc-700 bg-zinc-800/50 px-4 py-3 hover:bg-zinc-700/50 transition-colors group">
-                    <Link href={`/project/${p.project_id}`} className="flex flex-1 items-center gap-4 min-w-0">
-                      <div className="w-24 h-14 flex-shrink-0 rounded-lg overflow-hidden bg-zinc-900 relative">
-                        {(() => {
-                          const thumbUrl = getYoutubeThumbnail(p.youtube_url) ?? (p.video_path && p.status === "ready" ? videoUrl(p.project_id) : null);
-                          return (
-                            <>
-                              {thumbUrl ? (
-                                <img
-                                  src={thumbUrl}
-                                  alt=""
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex flex-col items-center justify-center gap-0.5 p-1">
-                                  <Film className="w-8 h-8 text-zinc-600" />
-                                </div>
-                              )}
-                              {p.status === "analyzing" && (
-                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 p-1 bg-black/70">
-                                  <Loader2 className="w-5 h-5 animate-spin text-cyan-400 flex-shrink-0" />
-                                  <span className="text-[9px] text-cyan-400 font-medium leading-tight text-center truncate w-full">
-                                    {(() => {
-                                      const prog = statusCache[p.project_id]?.progress || "Loading...";
-                                      const m = prog.match(/([\d.]+)\s*%/);
-                                      return m ? `${m[1]}%` : prog.replace(/\.\.\.?\s*$/, "");
-                                    })()}
-                                  </span>
-                                  {statusCache[p.project_id]?.eta_message && (
-                                    <span className="text-[8px] text-zinc-500">
-                                      ETA {statusCache[p.project_id].eta_message}
-                                    </span>
-                                  )}
-                                  {(() => {
-                                    const prog = statusCache[p.project_id]?.progress || "";
-                                    const m = prog.match(/([\d.]+)\s*%/);
-                                    const pct = m ? parseFloat(m[1]) : 0;
-                                    if (pct > 0 && pct < 100) {
-                                      return (
-                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-700">
-                                          <div
-                                            className="h-full bg-cyan-500 transition-all duration-500"
-                                            style={{ width: `${pct}%` }}
-                                          />
-                                        </div>
-                                      );
-                                    }
-                                    return null;
-                                  })()}
-                                </div>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-medium truncate">{p.title || "Untitled"}</h3>
-                        <div className="flex items-center gap-2 mt-0.5 text-sm text-zinc-500">
-                          {p.youtube_url ? (
-                            <a
-                              href={p.youtube_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="flex items-center gap-1 hover:text-cyan-400 truncate max-w-[280px]"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
-                              <span className="truncate">{p.youtube_url}</span>
-                            </a>
-                          ) : (
-                            <span>{p.clips?.length ?? 0} clips</span>
-                          )}
-                          <span>·</span>
-                          <span className="flex items-center gap-1 flex-shrink-0" suppressHydrationWarning>
-                            <Calendar className="w-3.5 h-3.5" />
-                            {new Date(p.updated_at).toLocaleDateString()}
-                          </span>
-                        </div>
-                        {p.status === "analyzing" && (
-                          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                            <span className="text-cyan-400 text-xs truncate">
-                              {statusCache[p.project_id]?.progress || "Processing..."}
-                            </span>
-                            {statusCache[p.project_id]?.eta_message && (
-                              <span className="text-zinc-500 text-xs">
-                                • Klip siap ~{statusCache[p.project_id].eta_message}
-                              </span>
+                  <Link href={`/project/${p.project_id}`} className="block">
+                    <div className="aspect-video relative bg-zinc-900">
+                      {(() => {
+                        const thumbUrl = getYoutubeThumbnail(p.youtube_url) ?? (p.video_path && p.status === "ready" ? videoUrl(p.project_id) : null);
+                        return (
+                          <>
+                            {thumbUrl ? (
+                              <img
+                                src={thumbUrl}
+                                alt=""
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center p-4">
+                                <Film className="w-12 h-12 text-zinc-600" />
+                              </div>
                             )}
-                          </div>
-                        )}
-                        {p.status === "error" && (
-                          <div className="mt-1 flex items-center gap-2">
-                            <span className="text-red-400 text-xs truncate flex-1 min-w-0">{p.error}</span>
-                            <button
-                              onClick={(e) => handleRetry(p.project_id, e)}
-                              disabled={retrying === p.project_id || !p.youtube_url}
-                              className="text-cyan-400 hover:text-cyan-300 text-xs shrink-0 disabled:opacity-50"
-                            >
-                              {retrying === p.project_id ? "..." : "Retry"}
-                            </button>
-                          </div>
-                        )}
-                        {p.status === "ready" && (
-                          <div className="mt-1 text-zinc-500 text-xs">{p.clips?.length ?? 0} clips</div>
+                            {p.status === "analyzing" && (
+                              <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2 bg-black/70">
+                                <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
+                                <span className="text-xs text-cyan-400 font-medium text-center">
+                                  {(() => {
+                                    const prog = statusCache[p.project_id]?.progress || "Loading...";
+                                    const m = prog.match(/([\d.]+)\s*%/);
+                                    return m ? `${m[1]}%` : prog.replace(/\.\.\.?\s*$/, "");
+                                  })()}
+                                </span>
+                                {statusCache[p.project_id]?.eta_message && (
+                                  <span className="text-[10px] text-zinc-400">~{statusCache[p.project_id].eta_message}</span>
+                                )}
+                                {(() => {
+                                  const prog = statusCache[p.project_id]?.progress || "";
+                                  const m = prog.match(/([\d.]+)\s*%/);
+                                  const pct = m ? parseFloat(m[1]) : 0;
+                                  if (pct > 0 && pct < 100) {
+                                    return (
+                                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-700">
+                                        <div
+                                          className="h-full bg-cyan-500 transition-all duration-500"
+                                          style={{ width: `${pct}%` }}
+                                        />
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+                      {p.status === "ready" && (
+                        <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-cyan-500/90 text-xs font-medium text-black">
+                          {p.clips?.length ?? 0} clips
+                        </div>
+                      )}
+                      {p.status === "error" && (
+                        <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-red-500/90 text-xs font-medium text-white">
+                          Error
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-3">
+                      <h3 className="font-medium text-sm line-clamp-2 text-zinc-200">{p.title || "Untitled"}</h3>
+                      <div className="flex items-center gap-2 mt-1.5 text-xs text-zinc-500">
+                        <span className="flex items-center gap-1" suppressHydrationWarning>
+                          <Calendar className="w-3 h-3" />
+                          {new Date(p.updated_at).toLocaleDateString()}
+                        </span>
+                        {p.status === "analyzing" && statusCache[p.project_id]?.eta_message && (
+                          <span className="text-cyan-400">• {statusCache[p.project_id].eta_message}</span>
                         )}
                       </div>
-                    </Link>
-                    <button
-                      onClick={(e) => handleDelete(p.project_id, e)}
-                      disabled={deleting === p.project_id}
-                      className="opacity-50 hover:opacity-100 hover:text-red-400 p-2 rounded-lg transition-all flex-shrink-0"
-                      title="Hapus project"
-                    >
-                      {deleting === p.project_id ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-5 h-5" />
+                      {p.status === "error" && (
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <span className="text-red-400 text-xs line-clamp-1 flex-1">{p.error}</span>
+                          <button
+                            onClick={(e) => { e.preventDefault(); handleRetry(p.project_id, e); }}
+                            disabled={retrying === p.project_id || !p.youtube_url}
+                            className="text-cyan-400 hover:text-cyan-300 text-xs shrink-0 disabled:opacity-50"
+                          >
+                            {retrying === p.project_id ? "..." : "Retry"}
+                          </button>
+                        </div>
                       )}
-                    </button>
-                  </div>
+                    </div>
+                  </Link>
+                  <button
+                    onClick={(e) => handleDelete(p.project_id, e)}
+                    disabled={deleting === p.project_id}
+                    className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/50 opacity-0 group-hover:opacity-100 hover:bg-red-500/80 hover:text-white transition-all"
+                    title="Hapus project"
+                  >
+                    {deleting === p.project_id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                  </button>
                 </motion.div>
               ))}
             </div>
