@@ -172,10 +172,16 @@ export default function ProjectPage() {
                       </div>
                     ) : (
                       <>
+                        <div className="absolute inset-0 bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center">
+                          <Play className="w-10 h-10 text-white/30" />
+                        </div>
                         <img
                           src={thumbnailClipUrl(id, i)}
                           alt=""
-                          className="w-full h-full object-cover"
+                          className="absolute inset-0 w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = "none";
+                          }}
                         />
                         <div
                           className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
