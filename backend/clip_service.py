@@ -10,6 +10,8 @@ from typing import Optional
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Default export settings (from settings_manager)
+EXPORT_MODES = ["landscape_fit", "face_tracking", "podcast_smart"]
+
 DEFAULT_EXPORT_SETTINGS = {
     "export_mode": "face_tracking",
     "dynamic_zoom_enabled": False,

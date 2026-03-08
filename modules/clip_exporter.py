@@ -39,6 +39,13 @@ try:
 except ImportError:
     MEDIAPIPE_AVAILABLE = False
 
+# Import podcast smart tracker
+try:
+    from modules.podcast_smart_tracker import PodcastSmartTracker
+    PODCAST_SMART_AVAILABLE = True
+except ImportError:
+    PODCAST_SMART_AVAILABLE = False
+
 class ClipExporter:
     """Manages clip export operations including download, encoding, and voiceover.
     Backend-safe: works with WebAppContext via safe_parent_call."""
@@ -350,9 +357,71 @@ class ClipExporter:
 
 
             # Construct Filter Complex
-            # Check export mode: landscape_fit (blur) vs face_tracking (crop)
+            # Check export mode: landscape_fit (blur) vs face_tracking (crop) vs podcast_smart (active speaker)
             export_mode = self.parent.custom_settings.get("export_mode", "landscape_fit")
             print(f"  [EXPORT MODE] Using mode: {export_mode}")
+
+            # Podcast Smart: pre-process video with per-frame active-speaker crop
+            effective_video_path = str(self.parent.video_path)
+            effective_start = result['start']
+            effective_duration = duration
+            if export_mode == "podcast_smart" and PODCAST_SMART_AVAILABLE:
+                print("  [PODCAST SMART] Active speaker mode - analyzing and cropping...")
+                try:
+                    tracker = PodcastSmartTracker(smoothing_factor=0.15, face_margin=1.4)
+                    crop_boxes = tracker.analyze_video(
+                        str(self.parent.video_path),
+                        start_time=result['start'],
+                        duration=duration,
+                        sample_rate=5,
+                    )
+                    tracker.close()
+                    cap = cv2.VideoCapture(str(self.parent.video_path))
+                    fps = cap.get(cv2.CAP_PROP_FPS)
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, int(result['start'] * fps))
+                    temp_video = Path(LOCAL_TEMP_DIR) / f"podcast_video_{int(time.time())}.mp4"
+                    Path(LOCAL_TEMP_DIR).mkdir(parents=True, exist_ok=True)
+                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                    out = cv2.VideoWriter(str(temp_video), fourcc, fps, (1080, 1920))
+                    frame_idx = 0
+                    while frame_idx < len(crop_boxes):
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
+                        x, y, cw, ch = crop_boxes[min(frame_idx, len(crop_boxes) - 1)]
+                        x, y, cw, ch = int(x), int(y), int(cw), int(ch)
+                        cropped = frame[y:y+ch, x:x+cw]
+                        if cropped.size:
+                            scaled = cv2.resize(cropped, (1080, 1920))
+                            out.write(scaled)
+                        frame_idx += 1
+                    cap.release()
+                    out.release()
+                    # Extract audio
+                    temp_audio = Path(LOCAL_TEMP_DIR) / f"podcast_audio_{int(time.time())}.m4a"
+                    pad_start = max(0, result['start'] - 0.2)
+                    pad_end = result['start'] + duration + 0.2
+                    subprocess.run([
+                        'ffmpeg', '-y', '-ss', str(pad_start), '-t', str(pad_end - pad_start),
+                        '-i', str(self.parent.video_path), '-vn', '-acodec', 'copy',
+                        str(temp_audio)
+                    ], capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
+                    # Mux
+                    temp_full = Path(LOCAL_TEMP_DIR) / f"podcast_full_{int(time.time())}.mp4"
+                    subprocess.run([
+                        'ffmpeg', '-y', '-i', str(temp_video), '-i', str(temp_audio),
+                        '-c:v', 'copy', '-c:a', 'aac', '-shortest', str(temp_full)
+                    ], capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
+                    effective_video_path = str(temp_full)
+                    effective_start = 0
+                    effective_duration = duration
+                    try:
+                        temp_video.unlink(missing_ok=True)
+                        temp_audio.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                except Exception as e:
+                    print(f"  [PODCAST SMART ERROR] {e} - falling back to center crop")
             
             if export_mode == "face_tracking" and MEDIAPIPE_AVAILABLE:
                 print("  [FACE TRACKING] Analyzing clip segment for face positions...")
