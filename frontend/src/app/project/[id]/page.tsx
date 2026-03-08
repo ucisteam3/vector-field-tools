@@ -3,11 +3,10 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
-import { Film, Play, Download, Loader2, Sparkles, Settings2 } from "lucide-react";
-import { getProject, getProjectStatus, exportClipWithSettings, videoUrl, clipUrl, fetchExtractAsBlobUrl, downloadClipExtract, type Project, type Clip } from "@/lib/api";
+import { motion } from "framer-motion";
+import { Play, Download, Loader2, Sparkles } from "lucide-react";
+import { getProject, getProjectStatus, clipUrl, type Project } from "@/lib/api";
 import AppSidebar from "@/components/AppSidebar";
-import { useAppSettings } from "@/lib/settings-store";
 
 export default function ProjectPage() {
   const params = useParams();
@@ -16,13 +15,9 @@ export default function ProjectPage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<{ status: string; progress?: string } | null>(null);
   const [playingClip, setPlayingClip] = useState<number | null>(null);
-  const [clipLoading, setClipLoading] = useState<number | null>(null);
-  const [clipBlobUrls, setClipBlobUrls] = useState<Record<number, string>>({});
-  const [exporting, setExporting] = useState<Set<number>>(new Set());
-  const [downloading, setDownloading] = useState<Set<number>>(new Set());
-  const playingVideoRef = useRef<HTMLVideoElement | null>(null);
-  const [exportSettings] = useAppSettings();
-  const displayMode = exportSettings?.export_mode ?? "face_tracking";
+  const [blobCache, setBlobCache] = useState<Record<number, string>>({});
+  const blobCacheRef = useRef<Record<number, string>>({});
+  blobCacheRef.current = blobCache;
 
   const loadProject = async () => {
     try {
@@ -52,82 +47,24 @@ export default function ProjectPage() {
     return () => clearInterval(interval);
   }, [id, project?.status]);
 
-  const [playingClipSrc, setPlayingClipSrc] = useState<string | null>(null);
+  useEffect(() => () => {
+    Object.values(blobCacheRef.current).forEach((url) => URL.revokeObjectURL(url));
+  }, []);
 
   const playClip = async (index: number) => {
     const clip = project?.clips?.[index];
-    if (!clip) return;
+    if (!clip?.clip_path) return;
     setPlayingClip(index);
-    if (clip.clip_path) {
-      setPlayingClipSrc(clipUrl(id, clip.clip_path.replace("clips/", "")));
-      setClipLoading(null);
-      return;
-    }
-    if (clipBlobUrls[index]) {
-      setPlayingClipSrc(clipBlobUrls[index]);
-      setClipLoading(null);
-      return;
-    }
-    setClipLoading(index);
+    if (blobCache[index]) return;
     try {
-      const blobUrl = await fetchExtractAsBlobUrl(id, index);
-      setClipBlobUrls((prev) => ({ ...prev, [index]: blobUrl }));
-      setPlayingClipSrc(blobUrl);
+      const url = clipUrl(id, clip.clip_path.replace("clips/", ""));
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to load");
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      setBlobCache((prev) => ({ ...prev, [index]: blobUrl }));
     } catch (e) {
       console.error(e);
-    }
-    setClipLoading(null);
-  };
-
-  const preFetchClip = (index: number) => {
-    const clip = project?.clips?.[index];
-    if (!clip?.clip_path && !clipBlobUrls[index]) {
-      fetchExtractAsBlobUrl(id, index).then((blobUrl) => {
-        setClipBlobUrls((prev) => ({ ...prev, [index]: blobUrl }));
-      }).catch(() => {});
-    }
-  };
-
-  const blobUrlsRef = useRef<Record<number, string>>({});
-  blobUrlsRef.current = clipBlobUrls;
-  useEffect(() => () => {
-    Object.values(blobUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
-  }, []);
-
-  const handleDownloadExtract = async (index: number, title?: string) => {
-    setDownloading((prev) => new Set(prev).add(index));
-    try {
-      const safe = (title ?? `clip_${index + 1}`).replace(/[^a-zA-Z0-9 _-]/g, "").trim() || `clip_${index + 1}`;
-      await downloadClipExtract(id, index, `${safe}.mp4`);
-    } catch (e) {
-      alert(String(e));
-    } finally {
-      setDownloading((prev) => {
-        const next = new Set(prev);
-        next.delete(index);
-        return next;
-      });
-    }
-  };
-
-  const handleExportWithSettings = async (index: number) => {
-    setExporting((prev) => new Set(prev).add(index));
-    try {
-      const { clip_path } = await exportClipWithSettings(id, index, exportSettings);
-      setProject((p) => {
-        if (!p) return p;
-        const clips = [...(p.clips || [])];
-        if (clips[index]) clips[index] = { ...clips[index], clip_path };
-        return { ...p, clips };
-      });
-    } catch (e) {
-      alert(String(e));
-    } finally {
-      setExporting((prev) => {
-        const next = new Set(prev);
-        next.delete(index);
-        return next;
-      });
     }
   };
 
@@ -179,80 +116,46 @@ export default function ProjectPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.03 }}
                   className="rounded-xl border border-white/10 bg-white/5 overflow-hidden hover:bg-white/10 transition-colors group"
-                  onMouseEnter={() => preFetchClip(i)}
                 >
-                  <div
-                    className={`relative ${
-                      displayMode === "face_tracking" || displayMode === "podcast_smart" ? "aspect-[9/16]" : "aspect-video"
-                    } bg-zinc-900`}
-                  >
-                    {playingClip === i && playingClipSrc ? (
-                      <div className="absolute inset-0 flex items-center justify-center bg-zinc-900">
-                        {displayMode === "landscape_fit" ? (
-                          <div className="relative w-full h-full">
-                            <video
-                              src={playingClipSrc}
-                              className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-50"
-                              aria-hidden
-                              muted
-                            />
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <video
-                                ref={playingVideoRef}
-                                src={playingClipSrc}
-                                autoPlay
-                                controls
-                                playsInline
-                                className="max-h-full max-w-full object-contain rounded shadow-2xl"
-                                onEnded={() => { setPlayingClip(null); setPlayingClipSrc(null); }}
-                              />
-                            </div>
-                          </div>
-                        ) : (
-                          <video
-                            ref={playingVideoRef}
-                            src={playingClipSrc}
-                            autoPlay
-                            controls
-                            playsInline
-                            className="w-full h-full object-cover"
-                            onEnded={() => { setPlayingClip(null); setPlayingClipSrc(null); }}
-                          />
-                        )}
-                      </div>
+                  <div className="relative aspect-[9/16] bg-zinc-900">
+                    {playingClip === i && blobCache[i] ? (
+                      <video
+                        src={blobCache[i]}
+                        autoPlay
+                        controls
+                        playsInline
+                        className="w-full h-full object-cover"
+                        onEnded={() => setPlayingClip(null)}
+                      />
                     ) : playingClip === i ? (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/60">
                         <Loader2 className="w-12 h-12 animate-spin text-cyan-400" />
-                        <span className="ml-2 text-sm text-zinc-300">Memotong klip...</span>
                       </div>
                     ) : (
                       <>
                         {clip.clip_path ? (
                           <video
                             src={clipUrl(id, clip.clip_path.replace("clips/", ""))}
-                            className={`w-full h-full ${displayMode === "landscape_fit" ? "object-contain" : "object-cover"}`}
+                            className="w-full h-full object-cover"
                             muted
                             preload="metadata"
                             playsInline
                           />
                         ) : (
-                          <video
-                            src={videoUrl(id)}
-                            className={`w-full h-full ${displayMode === "landscape_fit" ? "object-contain" : "object-cover"}`}
-                            muted
-                            preload="metadata"
-                            playsInline
-                            onLoadedMetadata={(e) => { (e.target as HTMLVideoElement).currentTime = clip.start; }}
-                          />
-                        )}
-                        <div
-                          className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                          onClick={() => playClip(i)}
-                        >
-                          <div className="w-14 h-14 rounded-full bg-cyan-500/80 flex items-center justify-center">
-                            <Play className="w-7 h-7 text-white ml-1" fill="currentColor" />
+                          <div className="absolute inset-0 flex items-center justify-center bg-zinc-800">
+                            <span className="text-xs text-zinc-500">Rendering...</span>
                           </div>
-                        </div>
+                        )}
+                        {clip.clip_path && (
+                          <div
+                            className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                            onClick={() => playClip(i)}
+                          >
+                            <div className="w-14 h-14 rounded-full bg-cyan-500/80 flex items-center justify-center">
+                              <Play className="w-7 h-7 text-white ml-1" fill="currentColor" />
+                            </div>
+                          </div>
+                        )}
                         <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/70 text-xs text-white">
                           {formatTime(clip.duration)}
                         </div>
@@ -265,37 +168,26 @@ export default function ProjectPage() {
                   <div className="p-2">
                     <h3 className="text-sm font-medium line-clamp-2 mb-2 text-zinc-200">{clip.title}</h3>
                     <div className="flex flex-wrap gap-1">
-                      <button
-                        onClick={() => playClip(i)}
-                        className="flex items-center gap-1 px-2 py-1 rounded bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 text-xs"
-                      >
-                        <Play className="w-3 h-3" /> Play
-                      </button>
                       {clip.clip_path ? (
-                        <a
-                          href={clipUrl(id, clip.clip_path.replace("clips/", ""))}
-                          download
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex items-center gap-1 px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-xs"
-                        >
-                          <Download className="w-3 h-3" />
-                        </a>
+                        <>
+                          <button
+                            onClick={() => playClip(i)}
+                            className="flex items-center gap-1 px-2 py-1 rounded bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 text-xs"
+                          >
+                            <Play className="w-3 h-3" /> Play
+                          </button>
+                          <a
+                            href={clipUrl(id, clip.clip_path.replace("clips/", ""))}
+                            download
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex items-center gap-1 px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-xs"
+                          >
+                            <Download className="w-3 h-3" /> Download
+                          </a>
+                        </>
                       ) : (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDownloadExtract(i, clip.title); }}
-                          disabled={downloading.has(i)}
-                          className="flex items-center gap-1 px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-xs disabled:opacity-50"
-                        >
-                          {downloading.has(i) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-                        </button>
+                        <span className="text-xs text-zinc-500">Preparing...</span>
                       )}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleExportWithSettings(i); }}
-                        disabled={exporting.has(i)}
-                        className="flex items-center gap-1 px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-xs disabled:opacity-50"
-                      >
-                        {exporting.has(i) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Settings2 className="w-3 h-3" />}
-                      </button>
                     </div>
                   </div>
                 </motion.div>
