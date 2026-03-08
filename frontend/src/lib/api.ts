@@ -1,0 +1,151 @@
+const API = "/api";
+
+export async function analyzeVideo(youtubeUrl: string): Promise<{ project_id: string; title: string }> {
+  const res = await fetch(`${API}/analyze`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ youtube_url: youtubeUrl }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function deleteProject(projectId: string): Promise<void> {
+  const res = await fetch(`${API}/project/${projectId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+export async function getProjects(): Promise<Project[]> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(`${API}/projects`, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  } catch (e) {
+    clearTimeout(timeout);
+    if ((e as Error).name === "AbortError") {
+      throw new Error("Server tidak merespon. Pastikan backend berjalan: python server.py");
+    }
+    throw e;
+  }
+}
+
+export async function getProject(id: string): Promise<Project> {
+  const res = await fetch(`${API}/project/${id}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getProjectStatus(id: string): Promise<{
+  status: string;
+  progress?: string;
+  error?: string;
+  eta_seconds?: number;
+  eta_message?: string;
+}> {
+  const res = await fetch(`${API}/project/${id}/status`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function exportClip(projectId: string, clipIndex: number): Promise<{ clip_path: string }> {
+  const res = await fetch(`${API}/project/${projectId}/export/${clipIndex}`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export type ExportSettingsInput = Record<string, unknown>;
+
+export async function exportClipWithSettings(
+  projectId: string,
+  clipId: number,
+  settings: ExportSettingsInput | null
+): Promise<{ clip_path: string }> {
+  const res = await fetch(`${API}/export_clip`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      project_id: projectId,
+      clip_id: clipId,
+      settings: settings ?? undefined,
+    }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function uploadBgm(file: File): Promise<{ path: string; filename: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API}/upload_bgm`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function uploadWatermarkImage(file: File): Promise<{ path: string; filename: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API}/upload_watermark_image`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function uploadCookies(file: File): Promise<{ ok: boolean }> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API}/upload_cookies`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getCookiesStatus(): Promise<{ exists: boolean; size_kb: number }> {
+  const res = await fetch(`${API}/cookies_status`);
+  if (!res.ok) return { exists: false, size_kb: 0 };
+  return res.json();
+}
+
+export async function getFonts(): Promise<string[]> {
+  const res = await fetch(`${API}/fonts`);
+  if (!res.ok) return ["Arial", "Roboto-Bold", "Poppins-Bold"];
+  return res.json();
+}
+
+export type Clip = {
+  start: number;
+  end: number;
+  duration: number;
+  score: number;
+  title: string;
+  clip_path?: string | null;
+};
+
+export type Project = {
+  project_id: string;
+  title: string;
+  youtube_url?: string | null;
+  video_path: string | null;
+  created_at: string;
+  updated_at: string;
+  clips: Clip[];
+  status: string;
+  error?: string | null;
+};
+
+export function videoUrl(projectId: string): string {
+  return `${API}/video/${projectId}`;
+}
+
+export function clipUrl(projectId: string, clipFilename: string): string {
+  return `${API}/clip/${projectId}/${clipFilename}`;
+}

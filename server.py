@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+"""
+Unified server entry point. Run from project root:
+  python server.py
+
+Starts FastAPI backend on port 8000.
+Frontend: cd frontend && npm run dev (port 3000)
+Then open: http://localhost:3000
+"""
+
+import os
+import sys
+
+# Ensure we run from project root
+ROOT = os.path.dirname(os.path.abspath(__file__))
+os.chdir(ROOT)
+sys.path.insert(0, ROOT)
+
+# Patch tkinter for headless backend
+try:
+    import tkinter
+    mb = getattr(tkinter, "messagebox", None)
+    if mb:
+        mb.showerror = lambda *a, **k: None
+        mb.showinfo = lambda *a, **k: None
+        mb.showwarning = lambda *a, **k: None
+        mb.askyesno = lambda *a, **k: True
+except Exception:
+    pass
+
+import uvicorn
+from backend.server import app
+
+if __name__ == "__main__":
+    print("Starting AI Video Clipper API at http://localhost:8000")
+    print("Frontend: cd frontend && npm run dev  (then open http://localhost:3000)")
+    uvicorn.run(app, host="0.0.0.0", port=8000)

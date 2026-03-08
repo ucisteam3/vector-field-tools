@@ -1,0 +1,32 @@
+---
+description: Otomatis jalankan ulang aplikasi setelah perubahan kode
+alwaysApply: true
+---
+
+# Auto Restart After Changes
+
+Setelah melakukan perubahan pada kode (backend atau frontend), **selalu jalankan ulang aplikasi** secara otomatis.
+
+## Langkah
+
+1. **Hentikan proses** yang memakai port 8000 (backend) dan 3000 (frontend):
+   - Windows: `netstat -ano | findstr :8000` dan `findstr :3000` → `taskkill /PID <pid> /F`
+
+2. **Jalankan backend** (background):
+   ```
+   cd j:\HEATMAP5; python backend/server.py
+   ```
+
+3. **Jalankan frontend** (background):
+   ```
+   cd j:\HEATMAP5\frontend; npm run start
+   ```
+
+Untuk perubahan **frontend only**: cukup restart frontend.
+Untuk perubahan **backend only**: cukup restart backend.
+Untuk perubahan **keduanya**: restart keduanya.
+
+## Perkecualian
+
+- Perubahan pada file dokumentasi (.md), konfigurasi yang tidak memengaruhi runtime (mis. .gitignore), atau komentar saja → tidak perlu restart.
+- Jika user meminta untuk tidak restart, ikuti permintaan user.

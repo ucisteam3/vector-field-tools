@@ -1,0 +1,1246 @@
+"""
+AI Segment Analyzer Module
+Handles AI-powered viral segment detection and title generation
+"""
+
+import os
+import re
+import json
+import time
+import random
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+# Optional: embedding + emotion models (lazy-loaded, skip if unavailable)
+_EMBEDDING_MODEL = None
+_EMOTION_MODEL = None
+_EMOTION_TOKENIZER = None
+
+
+
+class AISegmentAnalyzer:
+    """Manages AI-powered segment analysis and title generation"""
+    
+    HOOK_MAX_WORDS = 12
+    HOOK_FILLER_REMOVE = ["ee", "eh", "jadi", "ya", "gitu kan"]
+    HOOK_STRONG_VERBS = ["akan", "ternyata", "justru", "bikin", "masalahnya", "bisa", "harus", "memang"]
+    HOOK_SURPRISE = ["ternyata", "justru", "masalahnya", "anehnya", "padahal"]
+
+    def __init__(self, parent):
+        """
+        Initialize AI Segment Analyzer
+        
+        Args:
+            parent: Reference to YouTubeHeatmapAnalyzer instance for accessing AI clients and settings
+        """
+        self.parent = parent
+
+    # [MOMENT-FIRST] Window scanning for short viral moments
+    WINDOW_SIZE_SEC = 18
+    WINDOW_OVERLAP_SEC = 4
+    TOP_CANDIDATES_FOR_OPENAI = 250  # 120–250 candidate moments per hour
+    TARGET_CLIPS_PER_HOUR = 20
+    CLIP_MIN_DURATION_SEC = 15
+    CLIP_MAX_DURATION_SEC = 60
+    HOOK_PRE_ROLL_SEC = 2  # Start clip 2s before hook moment
+    HOOK_POST_ROLL_MIN = 30
+    HOOK_POST_ROLL_MAX = 45
+
+    # [HOOK DETECTION] Phrases that mark viral statement moments
+    HOOK_MOMENT_PATTERNS = [
+        "menurut saya", "masalahnya", "yang menarik", "bukan mustahil", "justru",
+        "ternyata", "anehnya", "padahal", "saya pikir", "ini masalah",
+        "yang bikin", "yang jadi masalah", "yang bikin menarik", "ini yang bikin", "ini yang menarik",
+    ]
+
+    # [INTRO/FILLER] Skip these at clip start — move to first meaningful sentence
+    FILLER_PHRASES = [
+        "jadi", "nah", "seperti biasa", "kita bahas dulu", "sebelum kita bahas",
+        "topik kita hari ini", "oke kita bahas", "kalau kita lihat",
+    ]
+
+    # [ARGUMENT] Debate/disagreement — highly viral in podcasts
+    ARGUMENT_PATTERNS = [
+        "tapi", "namun", "justru", "saya tidak setuju", "masalahnya",
+        "sebaliknya", "padahal",
+    ]
+
+    # [STRONG STATEMENT] Opinion / prediction / controversy
+    STRONG_STATEMENTS = [
+        "prediksi", "menurut saya", "tidak masuk akal", "aneh", "kontroversi",
+        "masalahnya", "yang menarik",
+    ]
+
+    # [PRE-FILTER] Viral category keywords - rule-based detection before AI
+    VIRAL_CATEGORY_KEYWORDS = {
+        "controversy": [
+            "kontroversi", "aneh", "tidak masuk akal", "keputusan wasit", "dipertanyakan",
+            "debat", "argumen", "keputusan", "protes wasit", "kesalahan wasit",
+        ],
+        "funny_relatable": [
+            "lucu", "ngakak", "kocak", "pernah ngalamin", "gak masuk akal",
+            "bikin ketawa", "kelucuan", "lebay", "lebay banget",
+        ],
+        "emotional": [
+            "sedih", "terharu", "menangis", "menyentuh", "haru",
+            "pilu", "emosi", "haru biru", "air mata",
+        ],
+        "surprising": [
+            "ternyata", "tidak disangka", "baru diketahui", "tahu gak",
+            "fakta mengejutkan", "tak terduga", "luar biasa", "bikin kaget",
+        ],
+        "anger_injustice": [
+            "marah", "kesal", "tidak adil", "protes", "kecewa",
+            "zalim", "aniaya", "ketidakadilan", "bikin emosi",
+        ],
+        "inspirational": [
+            "bangkit", "perjuangan", "jangan menyerah", "semangat",
+            "pantang menyerah", "bangkit dari keterpurukan", "motivasi",
+        ],
+        "personal_story": [
+            "saya pernah", "pengalaman saya", "waktu itu", "dulu saya",
+            "cerita saya", "pengalamanku", "kejadian waktu",
+        ],
+        "secrets_hidden": [
+            "rahasia", "fakta", "dibalik", "yang jarang diketahui",
+            "tahu gak", "fakta tersembunyi", "rahasia besar",
+        ],
+    }
+    # Dramatic connector words - often indicate important moments
+    CONNECTOR_WORDS = [
+        "tapi", "namun", "justru", "tiba tiba", "yang menarik",
+        "masalahnya", "ternyata", "padahal", "sementara", "di satu sisi",
+    ]
+    # [MULTI-SIGNAL] Viral detection patterns (includes HOOK_MOMENT_PATTERNS)
+    HOOK_PATTERNS = [
+        " itu ", " itu.", " itu?", " itu!",
+        "ini masalah besar", "ini yang bikin", "ini bikin",
+        "itu masalah", "itu yang", "kan itu",
+    ]
+    HUMOR_MARKERS = ["[tertawa]", "(tertawa)", "haha", "hehe", "wkwk", "wkwkwk"]
+    ARGUMENT_SIGNALS = ["tapi", "namun", "justru", "saya tidak setuju", "masalahnya", "sebaliknya", "padahal"]
+    SURPRISE_PATTERNS = ["ternyata", "bahkan", "tidak disangka", "yang bikin kaget", "anehnya"]
+
+    # Emotional/dramatic keywords - boost score for viral moment prioritization (post-AI)
+    HIGHLIGHT_KEYWORDS = [
+        "tapi", "namun", "justru", "ternyata", "yang menarik",
+        "aneh", "kontroversi", "luar biasa", "masalahnya",
+        "keputusan wasit", "gol", "tidak masuk akal",
+        "keputusan", "debat", "argumen", "kejadian",
+    ]
+    # Intro phrases at segment start = discussion setup, penalize heavily (-6)
+    INTRO_PHRASES = [
+        "jadi", "nah", "seperti biasa", "kita bahas dulu", "sebelum kita bahas",
+        "topik kita hari ini", "oke kita bahas", "kalau kita lihat",
+        "kita akan bahas", "sekarang kita bahas", "pertama kita bahas",
+    ]
+    # Greeting patterns in first 120 chars = strong penalty (avoid "halo bang sehat?" etc.)
+    GREETING_PATTERNS = [
+        "halo", "hai", "apa kabar", "sehat", "selamat datang",
+        "terima kasih sudah datang", "kita kedatangan", "host kita hari ini",
+        "gimana kabarnya",
+    ]
+    # Filler words to remove before sending to AI (improve semantic clarity)
+    FILLER_WORDS = [
+        "ee", "uh", "um", "apa namanya", "gitu kan", "jadi ya", "eee",
+    ]
+
+    def _get_all_viral_keywords(self):
+        """Lazy-build flat list of all viral keywords for fast lookup."""
+        if not hasattr(self, '_cached_viral_keywords') or self._cached_viral_keywords is None:
+            flat = []
+            for kws in self.VIRAL_CATEGORY_KEYWORDS.values():
+                flat.extend(kw.lower() for kw in kws)
+            self._cached_viral_keywords = list(set(flat))
+        return self._cached_viral_keywords
+
+    def _clean_filler_words(self, text: str) -> str:
+        """Remove filler words from text to improve AI semantic clarity."""
+        if not text or not text.strip():
+            return text or ""
+        t = text
+        for f in self.FILLER_WORDS:
+            # Match filler as whole word/phrase (case-insensitive)
+            pat = r'(?<!\w)' + re.escape(f) + r'(?!\w)'
+            t = re.sub(pat, ' ', t, flags=re.IGNORECASE)
+        t = re.sub(r'\s+', ' ', t).strip()
+        return t
+
+    def _is_filler_heavy(self, text: str) -> bool:
+        """True if segment has mostly filler words or very low information density."""
+        if not text or not text.strip():
+            return True
+        cleaned = self._clean_filler_words(text)
+        if len(cleaned.strip()) < 25:
+            return True
+        words = cleaned.split()
+        if len(words) < 4:
+            return True
+        return False
+
+    def _title_segment_similarity(self, title: str, segment_text: str) -> float:
+        """Cosine similarity between title and segment. Returns 0.0–1.0. Uses embeddings if available."""
+        if not title or not segment_text:
+            return 0.0
+        model = self._get_embedding_model()
+        if not model:
+            return 0.5
+        try:
+            emb = model.encode([title[:512], segment_text[:512]], show_progress_bar=False)
+            return float(self._cosine_similarity(emb[0], emb[1]))
+        except Exception:
+            return 0.5
+
+    # --- Optional ML models (embedding + emotion) ---
+    def _get_embedding_model(self):
+        """Lazy-load sentence-transformers model. Returns None if unavailable."""
+        global _EMBEDDING_MODEL
+        if _EMBEDDING_MODEL is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+                _EMBEDDING_MODEL = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+            except Exception:
+                _EMBEDDING_MODEL = False  # mark as attempted
+        return _EMBEDDING_MODEL if _EMBEDDING_MODEL else None
+
+    def _get_emotion_model(self):
+        """Lazy-load emotion classifier. Returns (model, tokenizer) or (None, None) if unavailable."""
+        global _EMOTION_MODEL, _EMOTION_TOKENIZER
+        if _EMOTION_MODEL is None:
+            try:
+                from transformers import AutoModelForSequenceClassification, AutoTokenizer
+                _EMOTION_TOKENIZER = AutoTokenizer.from_pretrained(
+                    "cardiffnlp/twitter-roberta-base-emotion"
+                )
+                _EMOTION_MODEL = AutoModelForSequenceClassification.from_pretrained(
+                    "cardiffnlp/twitter-roberta-base-emotion"
+                )
+            except Exception:
+                _EMOTION_MODEL = False
+                _EMOTION_TOKENIZER = False
+        m = _EMOTION_MODEL if _EMOTION_MODEL else None
+        t = _EMOTION_TOKENIZER if _EMOTION_TOKENIZER else None
+        return (m, t) if (m and t) else (None, None)
+
+    def _compute_embeddings_batch(self, texts: list) -> list:
+        """Compute embeddings for a batch of texts. Returns list of vectors or empty list on failure."""
+        model = self._get_embedding_model()
+        if not model:
+            return []
+        try:
+            # Truncate long texts to avoid OOM (model max ~512 tokens)
+            truncated = [t[:2000] if t else "" for t in texts]
+            emb = model.encode(truncated, show_progress_bar=False)
+            return list(emb)
+        except Exception:
+            return []
+
+    def _cosine_similarity(self, a, b) -> float:
+        """Cosine similarity between two vectors."""
+        try:
+            import numpy as np
+            a, b = np.asarray(a), np.asarray(b)
+            n = np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9)
+            return float(n)
+        except Exception:
+            return 0.0
+
+    def _semantic_uniqueness_score(self, embeddings: list, idx: int) -> int:
+        """
+        Score +3 if segment has large semantic change vs neighbors (topic shift / important moment).
+        """
+        if not embeddings or idx < 0 or idx >= len(embeddings):
+            return 0
+        sim_prev = self._cosine_similarity(embeddings[idx], embeddings[idx - 1]) if idx > 0 else 1.0
+        sim_next = self._cosine_similarity(embeddings[idx], embeddings[idx + 1]) if idx < len(embeddings) - 1 else 1.0
+        # Low similarity = high semantic change
+        min_sim = min(sim_prev, sim_next) if idx > 0 and idx < len(embeddings) - 1 else min(sim_prev, sim_next)
+        if min_sim < 0.6:
+            return 3
+        return 0
+
+    def _emotion_score_for_text(self, text: str) -> int:
+        """Score +3 if emotional content detected (anger, joy, excitement, etc.)."""
+        model, tokenizer = self._get_emotion_model()
+        if not model or not tokenizer or not text:
+            return 0
+        try:
+            import torch
+            inputs = tokenizer(text[:512], return_tensors="pt", truncation=True, padding=True)
+            with torch.no_grad():
+                out = model(**inputs)
+            # Labels: anger, joy, optimism, sadness
+            logits = out.logits[0]
+            pred_idx = int(logits.argmax())
+            # Any strong emotion (not neutral) = viral potential
+            if pred_idx >= 0 and logits[pred_idx] > 0.5:
+                return 3
+        except Exception:
+            pass
+        return 0
+
+    def _emotion_scores_batch(self, texts: list) -> list:
+        """Batch emotion scores. Returns list of 0 or 3. Processes in chunks to avoid OOM."""
+        model, tokenizer = self._get_emotion_model()
+        if not model or not tokenizer:
+            return [0] * len(texts)
+        scores = [0] * len(texts)
+        chunk = 16
+        try:
+            import torch
+            for i in range(0, len(texts), chunk):
+                batch = texts[i:i + chunk]
+                truncated = [t[:512] if t else "" for t in batch]
+                inputs = tokenizer(truncated, return_tensors="pt", truncation=True, padding=True)
+                with torch.no_grad():
+                    out = model(**inputs)
+                logits = out.logits
+                preds = logits.argmax(dim=1)
+                for j, idx in enumerate(range(i, min(i + chunk, len(texts)))):
+                    if logits[j][preds[j]] > 0.5:
+                        scores[idx] = 3
+        except Exception:
+            pass
+        return scores
+
+    def _compute_local_viral_score(self, window_text: str) -> int:
+        """
+        Multi-signal viral scoring (0–100).
+        +3 hook, +3 humor, +3 emotion, +2 argument, +2 surprise, +2 strong statement, +1 long
+        -8 greeting, -6 intro filler, -4 low info
+        """
+        if not window_text:
+            return 0
+        t = window_text.strip()
+        t_lower = t.lower()
+        score = 0
+
+        # HOOK MOMENT: phrases that mark viral statements (+3)
+        for p in self.HOOK_MOMENT_PATTERNS + self.HOOK_PATTERNS:
+            if p in t_lower:
+                score += 3
+                break
+
+        # HUMOR: laughter markers (+3)
+        for m in self.HUMOR_MARKERS:
+            if m in t_lower:
+                score += 3
+                break
+
+        # ARGUMENT: debate/disagreement (+2)
+        for s in self.ARGUMENT_PATTERNS:
+            if s in t_lower:
+                score += 2
+                break
+
+        # SURPRISE: reveal / unexpected (+2)
+        for s in self.SURPRISE_PATTERNS:
+            if s in t_lower:
+                score += 2
+                break
+
+        # STRONG STATEMENT: opinion/prediction/controversy (+2 or +3)
+        for s in self.STRONG_STATEMENTS:
+            if s in t_lower:
+                score += 3
+                break
+
+        # SHORT STRONG STATEMENT: 5–12 words = possible hook (+2)
+        for sent in re.split(r'[.!?]+', t):
+            w = len(sent.split())
+            if 5 <= w <= 12:
+                score += 2
+                break
+
+        # LONG EXPLANATION: substantial dialogue (+1)
+        if len(t) > 200:
+            score += 1
+
+        # GREETING PENALTY (-8)
+        first_120 = (t[:120] or "").lower()
+        for g in self.GREETING_PATTERNS:
+            if g in first_120:
+                score -= 8
+                break
+
+        # INTRO FILLER PENALTY (-6)
+        for phrase in self.FILLER_PHRASES:
+            if t_lower.startswith(phrase) or t_lower.startswith(phrase + " "):
+                score -= 6
+                break
+
+        # LOW INFORMATION: very short or generic (-4)
+        if len(t.strip()) < 40 or t_lower.count(" ") < 3:
+            score -= 4
+
+        return max(0, min(100, score))
+
+    def _passes_viral_filter(self, window_text: str) -> bool:
+        """Minimal gate: only reject empty or very short windows. Used for backwards compat."""
+        if not window_text:
+            return False
+        return len(window_text.strip()) >= 25
+
+    def _score_window_for_ranking(self, window_text: str) -> int:
+        """Score for ranking. Uses same logic as _compute_local_viral_score."""
+        return self._compute_local_viral_score(window_text)
+
+    def _adjust_viral_score_by_content(self, viral_score: int, seg_text: str) -> int:
+        """
+        Adjust viral_score based on segment content:
+        - Boost if contains highlight keywords (actual moment)
+        - Penalize if starts with intro phrases (topic setup)
+        - Penalize if greeting in first 120 chars
+        """
+        if not seg_text or not seg_text.strip():
+            return viral_score
+        t = seg_text.strip().lower()
+        score = viral_score
+        # Boost: segment contains emotional/dramatic moment signals
+        for kw in self.HIGHLIGHT_KEYWORDS:
+            if kw in t:
+                score = min(100, score + 12)
+                break
+        # Penalty: segment starts with intro/setup
+        for phrase in self.INTRO_PHRASES:
+            if t.startswith(phrase) or t.startswith(phrase + " "):
+                score = max(0, score - 15)
+                break
+        # Penalty: greeting in first 120 chars
+        first_120 = t[:120]
+        for g in self.GREETING_PATTERNS:
+            if g in first_120:
+                score = max(0, score - 8)
+                break
+        return score
+
+    def _time_str_to_sec(self, t_str):
+        """Convert MM:SS or HH:MM:SS to seconds."""
+        parts = t_str.strip().split(":")
+        if len(parts) == 2:
+            return int(parts[0]) * 60 + int(parts[1])
+        if len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+        return 0
+
+    def _slice_transcript_by_time(self, formatted_transcript, start_sec, end_sec):
+        """Return transcript text for lines whose timestamp falls in [start_sec, end_sec]. Keeps [MM:SS] format."""
+        lines = []
+        for line in formatted_transcript.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            match = re.match(r"\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]", line)
+            if match:
+                g = match.groups()
+                if len(g) == 3 and g[2] is not None:
+                    t_sec = int(g[0]) * 3600 + int(g[1]) * 60 + int(g[2])
+                else:
+                    t_sec = int(g[0]) * 60 + int(g[1])
+                if start_sec <= t_sec <= end_sec:
+                    lines.append(line)
+        return "\n".join(lines) if lines else ""
+
+    def _get_timestamped_sentences(self):
+        """
+        [MOMENT-FIRST] Build list of (start_sec, end_sec, text) from sub_transcriptions.
+        Each item is a cue/sentence with timestamps for hook detection.
+        """
+        cues = getattr(self.parent, "sub_transcriptions", None)
+        if not cues or not isinstance(cues, dict):
+            return []
+        out = []
+        for _, c in sorted(cues.items(), key=lambda x: x[1].get("start", 0)):
+            if not isinstance(c, dict):
+                continue
+            s = self._normalize_cue_time(c.get("start") or c.get("s"))
+            e = self._normalize_cue_time(c.get("end") or c.get("e")) if (c.get("end") or c.get("e")) is not None else s + 5.0
+            t = (c.get("text") or c.get("t") or "").strip()
+            if t:
+                out.append((s, e, t))
+        return out
+
+    def _is_hook_sentence(self, text: str) -> bool:
+        """True if sentence contains hook pattern or is strong short statement (5–12 words)."""
+        if not text or len(text.strip()) < 10:
+            return False
+        t_lower = text.lower().strip()
+        for p in self.HOOK_MOMENT_PATTERNS:
+            if p in t_lower:
+                return True
+        words = text.split()
+        if 5 <= len(words) <= 12:
+            for s in self.STRONG_STATEMENTS + self.ARGUMENT_PATTERNS:
+                if s in t_lower:
+                    return True
+        return False
+
+    def _detect_hook_moments(self):
+        """
+        [MOMENT-FIRST] Detect hook moments from timestamped sentences.
+        Returns list of (hook_start_sec, hook_end_sec, text, base_score).
+        """
+        sentences = self._get_timestamped_sentences()
+        moments = []
+        for start_sec, end_sec, text in sentences:
+            if not self._is_hook_sentence(text):
+                continue
+            score = self._compute_local_viral_score(text)
+            moments.append((start_sec, end_sec, text, score))
+        return moments
+
+    def _build_clip_around_hook(self, hook_start: float, hook_end: float, duration_sec: float) -> tuple:
+        """
+        Build clip around hook: start = hook - 2s, end = hook + 30–45s.
+        Clamped to CLIP_MIN/MAX and video duration.
+        """
+        clip_start = max(0.0, hook_start - self.HOOK_PRE_ROLL_SEC)
+        post = random.uniform(self.HOOK_POST_ROLL_MIN, self.HOOK_POST_ROLL_MAX)
+        clip_end = min(duration_sec, hook_end + post)
+        dur = clip_end - clip_start
+        if dur < self.CLIP_MIN_DURATION_SEC:
+            clip_end = min(duration_sec, clip_start + self.CLIP_MIN_DURATION_SEC)
+        if dur > self.CLIP_MAX_DURATION_SEC:
+            clip_end = clip_start + self.CLIP_MAX_DURATION_SEC
+        return (clip_start, clip_end)
+
+    def _merge_overlapping_clips(self, segments: list, overlap_threshold: float = 0.7) -> list:
+        """
+        If two clips overlap >70%, merge them instead of deleting.
+        Keeps higher-scoring segment's timing, extends to cover both.
+        """
+        if len(segments) <= 1:
+            return segments
+        segs = sorted(segments, key=lambda x: x.get("start", 0))
+        merged = []
+        i = 0
+        while i < len(segs):
+            curr = segs[i]
+            cs, ce = curr.get("start", 0), curr.get("end", 0)
+            curr_dur = ce - cs
+            j = i + 1
+            while j < len(segs):
+                next_s = segs[j]
+                ns, ne = next_s.get("start", 0), next_s.get("end", 0)
+                ov = max(0, min(ce, ne) - max(cs, ns))
+                dur_min = min(curr_dur, ne - ns)
+                if dur_min > 0 and (ov / dur_min) > overlap_threshold:
+                    ce = max(ce, ne)
+                    curr_dur = ce - cs
+                    curr["end"] = ce
+                    if curr.get("viral_score", 0) < next_s.get("viral_score", 0):
+                        curr["viral_score"] = next_s.get("viral_score", 0)
+                    j += 1
+                else:
+                    break
+            merged.append(curr)
+            i = j
+        return merged
+
+    def _normalize_cue_time(self, val) -> float:
+        """Convert to seconds; if value > 10000 assume milliseconds."""
+        try:
+            v = float(val)
+            if v > 10000:
+                return v / 1000.0
+            return v
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _get_transcript_for_clip_range(self, clip_start: float, clip_end: float, cues: dict) -> str:
+        """
+        Extract transcript from subtitle cues that OVERLAP the clip window.
+        Include cue if: cue.end >= clip_start AND cue.start <= clip_end.
+        Handles milliseconds (values > 10000). Returns text in chronological order.
+        """
+        if not cues or not isinstance(cues, dict):
+            return ""
+        entries = []
+        for _, c in cues.items():
+            if not isinstance(c, dict):
+                continue
+            s = c.get("start") or c.get("s")
+            e = c.get("end") or c.get("e")
+            t = (c.get("text") or c.get("t") or "").strip()
+            if not t or s is None:
+                continue
+            start = self._normalize_cue_time(s)
+            end = self._normalize_cue_time(e) if e is not None else start + 5.0
+            if end >= clip_start and start <= clip_end:
+                entries.append((start, t))
+        entries.sort(key=lambda x: x[0])
+        return " ".join(txt for _, txt in entries).strip() if entries else ""
+
+    def get_transcript_for_clip_from_vtt(self, clip_start: float, clip_end: float, vtt_path: str) -> str:
+        """Extract transcript from VTT file for clip range. Uses same source as clip export."""
+        if not vtt_path or not os.path.exists(vtt_path):
+            return ""
+        try:
+            cues = self.parent.parse_vtt(vtt_path)
+            return self._get_transcript_for_clip_range(clip_start, clip_end, cues)
+        except Exception:
+            return ""
+
+    def _get_transcript_duration_sec(self, formatted_transcript):
+        """Return approximate duration in seconds from last timestamp in transcript."""
+        max_sec = 0
+        for line in formatted_transcript.split("\n"):
+            match = re.search(r"\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]", line)
+            if match:
+                g = match.groups()
+                if len(g) == 3 and g[2] is not None:
+                    t_sec = int(g[0]) * 3600 + int(g[1]) * 60 + int(g[2])
+                else:
+                    t_sec = int(g[0]) * 60 + int(g[1])
+                max_sec = max(max_sec, t_sec)
+        return max_sec
+
+    def _process_raw_hook_to_tts(self, raw_text: str) -> str:
+        """
+        Convert raw transcript to TTS-ready hook (8-12 words, first sentence or first 10 words).
+        - Remove timestamps [MM:SS], brackets, trim
+        - Split by . ? ! → use first sentence
+        - Strip leading intro phrases (e.g. "Nah sebelum kita bahas...")
+        - If no punctuation: take first 10 words
+        - Cap at HOOK_MAX_WORDS
+        """
+        if not raw_text or not raw_text.strip():
+            return ""
+        t = raw_text.strip()
+        # Remove timestamps [00:12] or [0:12] or [1:23:45]
+        t = re.sub(r'\[\d{1,2}:\d{2}(?::\d{2})?\]', '', t)
+        # Remove brackets and excess whitespace
+        t = re.sub(r'\[|\]', '', t)
+        t = re.sub(r'\s+', ' ', t).strip()
+        if not t:
+            return ""
+        # Split by sentence punctuation . ? !
+        sentences = re.split(r'[.?!]+', t)
+        first = (sentences[0] or "").strip()
+        if not first:
+            first = t
+        # Strip leading intro/filler phrases to get the punch (e.g. "Nah sebelum kita bahas wasit kita bahas dulu gol Beckham..." → "gol Beckham...")
+        first_lower = first.lower()
+        lead_ins = ["nah ", "oke ", "jadi ", "karena ", "karena itu ", "lalu ", "terus ", "kita bahas dulu ", "wasit kita bahas ", "wasit kita bahas dulu "]
+        for _ in range(8):  # Multiple passes to strip stacked intro phrases
+            changed = False
+            for lead in lead_ins + list(self.INTRO_PHRASES):
+                if first_lower.startswith(lead):
+                    first_lower = first_lower[len(lead):].strip()
+                    first = first[len(lead):].strip()
+                    changed = True
+                    break
+            if not changed:
+                break
+        words = first.split()
+        if not words:
+            words = t.split()
+        # Cap at HOOK_MAX_WORDS (8-12), fallback first 10 if no punctuation
+        if len(sentences) > 1:
+            hook_words = words[:self.HOOK_MAX_WORDS]
+        else:
+            hook_words = words[:10]  # No punctuation: first 10 words
+        return " ".join(hook_words).strip()
+
+    def _remove_hook_fillers(self, text: str) -> str:
+        """Remove filler words before scoring sentences."""
+        if not text:
+            return ""
+        t = text
+        for f in self.HOOK_FILLER_REMOVE:
+            pat = r'(?<!\w)' + re.escape(f) + r'(?!\w)'
+            t = re.sub(pat, ' ', t, flags=re.IGNORECASE)
+        return re.sub(r'\s+', ' ', t).strip()
+
+    def _score_sentence_for_hook(self, sentence: str) -> float:
+        """Score sentence: names (cap), strong verbs, surprise = higher score."""
+        cleaned = self._remove_hook_fillers(sentence)
+        if len(cleaned.split()) < 3:
+            return 0.0
+        t = cleaned.lower()
+        score = 0.0
+        for w in cleaned.split():
+            if len(w) >= 4 and w[0].isupper():
+                score += 2.0
+        for v in self.HOOK_STRONG_VERBS:
+            if v in t:
+                score += 1.5
+                break
+        for s in self.HOOK_SURPRISE:
+            if s in t:
+                score += 2.0
+                break
+        return score
+
+    def _score_phrase_for_hook(self, phrase: str) -> float:
+        """Score a phrase (may be sub-sentence). Reuse same heuristics."""
+        return self._score_sentence_for_hook(phrase)
+
+    def _extract_core_hook_from_text(self, full_text: str) -> str:
+        """
+        Extract strongest statement from full segment (not first seconds).
+        Prefer names, strong verbs (akan, ternyata, justru), surprise. Max 12 words.
+        For run-on transcripts: slide window to find best phrase.
+        """
+        if not full_text or not full_text.strip():
+            return ""
+        t = full_text.strip()
+        t = re.sub(r'\[\d{1,2}:\d{2}(?::\d{2})?\]', '', t)
+        t = re.sub(r'\[|\]', '', t)
+        t = re.sub(r'\s+', ' ', t).strip()
+        if not t:
+            return ""
+        sentences = re.split(r'[.?!]+', t)
+        best_phrase, best_score = "", -1.0
+        for s in sentences:
+            s = s.strip()
+            if not s or len(s.split()) < 2:
+                continue
+            words = s.split()
+            if len(words) <= self.HOOK_MAX_WORDS:
+                score = self._score_phrase_for_hook(s)
+                if score > best_score:
+                    best_score = score
+                    best_phrase = s
+            else:
+                # Run-on: slide window (4..12 words) to find strongest phrase
+                for size in range(self.HOOK_MAX_WORDS, 3, -1):
+                    for i in range(len(words) - size + 1):
+                        window = " ".join(words[i : i + size])
+                        score = self._score_phrase_for_hook(window)
+                        if score > best_score:
+                            best_score = score
+                            best_phrase = window
+        if not best_phrase:
+            words = t.split()
+            return " ".join(words[:self.HOOK_MAX_WORDS]).strip()
+        return " ".join(best_phrase.split()[:self.HOOK_MAX_WORDS]).strip()
+
+    def extract_hook_from_segment(self, segment_start_sec, transcriptions):
+        """
+        Extract core hook from full segment transcript (strongest statement, not first seconds).
+        """
+        if not transcriptions:
+            return ""
+        parts = []
+        for _, item in sorted(transcriptions.items(), key=lambda x: x[1].get('start', 0)):
+            text = (item.get('text') or "").strip()
+            if text:
+                parts.append(text)
+        full = " ".join(parts).strip()
+        return self._extract_core_hook_from_text(full) if full else ""
+
+    def get_viral_segments_from_ai(self, raw_transcript, keyword=None):
+        """
+        [MOMENT-FIRST] Detect viral clips: transcript → hook moments → expand → score → rank.
+        Produces 15–30 high-quality clips that start at the important statement.
+        """
+        if not raw_transcript:
+            return None
+
+        # Build formatted transcript and duration
+        formatted_transcript = ""
+        if isinstance(raw_transcript, dict):
+            for i in sorted(raw_transcript.keys()):
+                entry = raw_transcript[i]
+                start = entry.get('start', 0)
+                ts = f"[{int(start // 60):02d}:{int(start % 60):02d}]"
+                formatted_transcript += f"{ts} {entry.get('text', '')}\n"
+        else:
+            formatted_transcript = raw_transcript
+        duration_sec = self._get_transcript_duration_sec(formatted_transcript)
+        duration_sec = max(duration_sec, 60)
+
+        # [MOMENT-FIRST] Primary path when sub_transcriptions available
+        openai_segments = []
+        if getattr(self.parent, "sub_transcriptions", None) and self.parent.sub_transcriptions:
+            moments = self._detect_hook_moments()
+            print(f"  [MOMENT] Detected {len(moments)} hook moments")
+
+            for hook_start, hook_end, text, base_score in moments:
+                clip_start, clip_end = self._build_clip_around_hook(hook_start, hook_end, duration_sec)
+                dur = clip_end - clip_start
+                if dur < self.CLIP_MIN_DURATION_SEC:
+                    continue
+                openai_segments.append({
+                    "start": clip_start, "end": clip_end,
+                    "viral_score": base_score, "hook": text[:80]
+                })
+
+            # Window scanning for more candidates (18s, 4s overlap)
+            step_sec = self.WINDOW_SIZE_SEC - self.WINDOW_OVERLAP_SEC
+            raw_windows = []
+            for start_sec in range(0, int(duration_sec), step_sec):
+                end_sec = min(start_sec + self.WINDOW_SIZE_SEC, int(duration_sec) + 1)
+                if end_sec - start_sec < 12:
+                    continue
+                window_text = self._slice_transcript_by_time(formatted_transcript, start_sec, end_sec)
+                if len(window_text.strip()) < 40:
+                    continue
+                raw_windows.append((start_sec, end_sec, window_text))
+
+            texts = [w[2] for w in raw_windows]
+            embeddings = self._compute_embeddings_batch(texts)
+            emotion_scores = self._emotion_scores_batch(texts)
+
+            for i, (start_sec, end_sec, window_text) in enumerate(raw_windows):
+                rule_score = self._compute_local_viral_score(window_text)
+                sem_score = self._semantic_uniqueness_score(embeddings, i) if embeddings else 0
+                emo_score = emotion_scores[i] if emotion_scores else 0
+                viral_score = min(100, rule_score + sem_score + emo_score)
+                if viral_score < 3:
+                    continue
+                clip_start, clip_end = self._build_clip_around_hook(start_sec, end_sec, duration_sec)
+                dur = clip_end - clip_start
+                if dur >= self.CLIP_MIN_DURATION_SEC:
+                    openai_segments.append({
+                        "start": clip_start, "end": clip_end,
+                        "viral_score": viral_score, "hook": (window_text[:80] or "").strip()
+                    })
+
+            openai_segments.sort(key=lambda x: x.get("viral_score", 0), reverse=True)
+            seen_ranges = []
+            deduped = []
+            for seg in openai_segments:
+                s, e = seg["start"], seg["end"]
+                too_close = any(abs(s - rs) < 8 and abs(e - re) < 8 for rs, re in seen_ranges)
+                if not too_close:
+                    seen_ranges.append((s, e))
+                    deduped.append(seg)
+
+            openai_segments = self._merge_overlapping_clips(deduped, overlap_threshold=0.7)
+            for seg in openai_segments:
+                s, e = seg["start"], seg["end"]
+                if e - s > self.CLIP_MAX_DURATION_SEC:
+                    seg["end"] = s + self.CLIP_MAX_DURATION_SEC
+                elif e - s < self.CLIP_MIN_DURATION_SEC:
+                    seg["end"] = s + self.CLIP_MIN_DURATION_SEC
+
+            target_clips = max(15, min(30, int(duration_sec / 3600 * self.TARGET_CLIPS_PER_HOUR)))
+            openai_segments = openai_segments[:max(target_clips, 40)]
+            print(f"  [MOMENT] Candidates: {len(deduped)} → final pool: {len(openai_segments)}")
+
+        # [FALLBACK] No sub_transcriptions: use GPT
+        if not openai_segments and getattr(self.parent, "openai_available", False):
+            transcript_for_ai = formatted_transcript.strip()[:120000]
+            openai_segments = self.parent.detect_viral_segments_with_openai(transcript_for_ai)
+            if openai_segments:
+                for seg in openai_segments:
+                    s, e = float(seg.get("start", 0)), float(seg.get("end", 0))
+                    if e - s > self.CLIP_MAX_DURATION_SEC:
+                        seg["end"] = s + self.CLIP_MAX_DURATION_SEC
+                    if e - s < self.CLIP_MIN_DURATION_SEC:
+                        seg["end"] = s + self.CLIP_MIN_DURATION_SEC
+
+        if not openai_segments:
+            print("  [WARN] No viral segments. Ensure transcript has timestamps (VTT/sub_transcriptions).")
+            return None
+
+        openai_segments.sort(key=lambda x: x.get("viral_score", 0), reverse=True)
+        target_clips = max(15, min(30, int(duration_sec / 3600 * self.TARGET_CLIPS_PER_HOUR)))
+        openai_segments = openai_segments[:target_clips]
+
+        print(f"  [OPENAI] Processing {len(openai_segments)} clips for titles and hooks")
+
+        viral_segments = {}
+        PADDING_SEC = 5
+        for i, item in enumerate(openai_segments):
+            start_sec = float(item.get("start", 0))
+            end_sec = float(item.get("end", 0))
+            if end_sec <= start_sec:
+                continue
+            duration = end_sec - start_sec
+            if duration < self.CLIP_MIN_DURATION_SEC:
+                continue
+            if duration > self.CLIP_MAX_DURATION_SEC:
+                end_sec = start_sec + self.CLIP_MAX_DURATION_SEC
+
+            # Build segment transcript early (needed for hook fallback)
+            seg_text_parts = []
+            if getattr(self.parent, "sub_transcriptions", None):
+                for sub_item in self.parent.sub_transcriptions.values():
+                    sub_start = sub_item["start"]
+                    sub_end = sub_item["end"]
+                    if (sub_start >= start_sec - PADDING_SEC and sub_start <= end_sec + PADDING_SEC) or (
+                        sub_end >= start_sec - PADDING_SEC and sub_end <= end_sec + PADDING_SEC
+                    ):
+                        seg_text_parts.append(sub_item.get("text", ""))
+            full_seg_text = " ".join(seg_text_parts)
+
+            # Clip relevance: skip filler-heavy / low-information segments
+            if self._is_filler_heavy(full_seg_text):
+                continue
+
+            hook_script = (item.get("hook") or "").strip()
+            if not hook_script and full_seg_text:
+                hook_script = self._extract_core_hook_from_text(full_seg_text)
+            if not hook_script:
+                hook_script = " ".join(full_seg_text.split()[:10]).strip() if full_seg_text else ""
+
+            hook_text = hook_script
+            hook_score_val = 50
+            if hook_script:
+                try:
+                    refined_hook, hook_score_val = self.parent.refine_and_score_hook_openai(hook_script, max_attempts=1)
+                    if refined_hook:
+                        hook_text = refined_hook
+                    hook_score_val = self.parent.apply_hook_trigger_boost(hook_text, hook_score_val)
+                except Exception:
+                    pass
+
+            # Content-based adjustment: boost emotional/dramatic moments, penalize intro-only segments
+            viral_score_val = int(item.get("viral_score", 0))
+            viral_score_val = self._adjust_viral_score_by_content(viral_score_val, full_seg_text)
+            # Ranking: 0.5*viral + 0.3*hook + 0.2*activity (activity=75 default for AI-selected moments)
+            activity_score = 75
+            final_score_val = round(
+                viral_score_val * 0.5 + hook_score_val * 0.3 + activity_score * 0.2
+            )
+            title = (item.get("title") or "").strip()
+            if not title and full_seg_text:
+                existing = [v.get("text") for v in viral_segments.values() if v.get("text")]
+                cleaned_seg = self._clean_filler_words(full_seg_text)
+                clickbait = self.parent.generate_clickbait_title(
+                    cleaned_seg or full_seg_text, existing_titles=existing, max_attempts=5, strict_content=True
+                )
+                if clickbait:
+                    # Title semantic validation: regenerate if title does not match content
+                    sim = self._title_segment_similarity(clickbait, full_seg_text)
+                    if sim < 0.35:
+                        clickbait = self.parent.generate_clickbait_title(
+                            cleaned_seg or full_seg_text, existing_titles=existing, max_attempts=3, strict_content=True
+                        )
+                    title = self.parent.clean_viral_title(clickbait) if clickbait else ""
+            if not title:
+                title = (full_seg_text or "").strip()
+                title = (title[:52].rstrip() + "...") if len(title) > 55 else title
+            if not title:
+                title = "Klip"
+            # Ensure hook is never empty (TTS intro) — fallback to title
+            if not hook_text or not hook_text.strip():
+                hook_text = title
+                hook_script = title
+            caption = (item.get("caption") or "").strip()
+            keywords = item.get("keywords") or []
+            hashtags = item.get("hashtags") or []
+            if isinstance(keywords, str):
+                keywords = [k.strip() for k in keywords.replace(",", " ").split() if k.strip()]
+            if isinstance(hashtags, str):
+                hashtags = [h.strip().lstrip("#") for h in hashtags.replace(",", " ").split() if h.strip()]
+            viral_segments[i] = {
+                "start": float(start_sec),
+                "end": float(end_sec),
+                "text": title,
+                "segment_transcript": full_seg_text,
+                "hook_script": hook_text,
+                "hook_text": hook_text,
+                "clickbait_title": title,
+                "viral_score": viral_score_val,
+                "hook_score": hook_score_val,
+                "final_score": final_score_val,
+                "caption": caption,
+                "keywords": keywords,
+                "hashtags": hashtags,
+            }
+
+        # Dedupe by >60% overlap, keep higher final_score
+        if viral_segments:
+            seg_list = list(viral_segments.items())
+            seg_list.sort(key=lambda x: x[1].get("final_score", 0), reverse=True)
+            keep_ids = []
+            for idx, (kid, seg) in enumerate(seg_list):
+                overlap_any = False
+                for kept_id in keep_ids:
+                    kept = viral_segments[kept_id]
+                    ov = max(0, min(seg["end"], kept["end"]) - max(seg["start"], kept["start"]))
+                    dur_min = min(seg["end"] - seg["start"], kept["end"] - kept["start"])
+                    if dur_min > 0 and (ov / dur_min) > 0.6:
+                        overlap_any = True
+                        break
+                if not overlap_any:
+                    keep_ids.append(kid)
+            viral_segments = {k: viral_segments[k] for k in keep_ids if k in viral_segments}
+
+        if viral_segments:
+            print(f"  [SUCCESS] Berhasil menemukan {len(viral_segments)} Golden Moment via AI!")
+
+            # [SMART BOUNDARY] Refine segment boundaries (pre-roll + sentence completion)
+            try:
+                from modules.smart_segmentation import refine_all_segments
+                
+                # Try to find subtitle file (for Smart Start + Sentence Completion refinement)
+                subtitle_path = None
+                vid = getattr(self.parent, 'video_path', None) or getattr(self.parent, 'current_video_path', None)
+                if vid:
+                    base_path = os.path.splitext(vid)[0]
+                    for ext in [".id.vtt", ".en.vtt", ".vtt", ".srt"]:
+                        p = base_path + ext
+                        if os.path.exists(p):
+                            subtitle_path = p
+                            break
+                if not subtitle_path and getattr(self.parent, 'current_transcript_path', None):
+                    tp = self.parent.current_transcript_path
+                    if tp and os.path.exists(tp):
+                        subtitle_path = tp
+                
+                if subtitle_path:
+                    print(f"  [SMART] Refining boundaries using subtitles: {os.path.basename(subtitle_path)}")
+                    # Convert dict to list for refinement
+                    segments_list = [
+                        {'start': v['start'], 'end': v['end'], 'text': v['text'],
+                         'segment_transcript': v.get('segment_transcript', ''),
+                         'hook_script': v.get('hook_script', ''), 'hook_text': v.get('hook_text', ''),
+                         'viral_score': v.get('viral_score', 0), 'hook_score': v.get('hook_score', 0),
+                         'final_score': v.get('final_score', 0), 'clickbait_title': v.get('clickbait_title', ''),
+                         'caption': v.get('caption', ''), 'keywords': v.get('keywords', []), 'hashtags': v.get('hashtags', []),
+                         '_id': k}
+                        for k, v in viral_segments.items()
+                    ]
+                    refined_list, stats = refine_all_segments(segments_list, subtitle_path,
+                                                             min_duration=float(self.CLIP_MIN_DURATION_SEC),
+                                                             max_duration=float(self.CLIP_MAX_DURATION_SEC))
+                    by_id = {s['_id']: s for s in segments_list}
+                    viral_segments = {}
+                    for seg in refined_list:
+                        orig = by_id.get(seg['_id'], {})
+                        viral_segments[seg['_id']] = {
+                            'start': seg['start'],
+                            'end': seg['end'],
+                            'text': orig.get('text', seg.get('text', '')),
+                            'segment_transcript': orig.get('segment_transcript', ''),
+                            'hook_script': orig.get('hook_script', ''),
+                            'hook_text': orig.get('hook_text', ''),
+                            'viral_score': orig.get('viral_score', 0),
+                            'hook_score': orig.get('hook_score', 0),
+                            'final_score': orig.get('final_score', 0),
+                            'clickbait_title': orig.get('clickbait_title', ''),
+                            'caption': orig.get('caption', ''),
+                            'keywords': orig.get('keywords', []),
+                            'hashtags': orig.get('hashtags', []),
+                        }
+                else:
+                    # No subtitle file: apply pre-roll buffer only (max 4 sec)
+                    for k, v in viral_segments.items():
+                        v["start"] = max(0.0, float(v.get("start", 0)) - 4.0)
+            except Exception as e:
+                print(f"  [WARNING] Smart boundary refinement failed: {e}")
+            return viral_segments
+        print("  [WARNING] AI tidak menghasilkan segmen viral yang valid")
+        return None
+
+    def generate_segment_titles_parallel(self):
+        """Generate titles with OpenAI only (no Groq). Used when segments came from heatmap, not from OpenAI detection."""
+        valid_segments = [
+            res for res in (self.parent.analysis_results or [])
+            if (res.get("full_topic") or res.get("topic")) and not (res.get("full_topic") or "").startswith("[")
+        ]
+        if not valid_segments:
+            return
+        if not getattr(self.parent, "openai_available", False):
+            return
+        total = len(valid_segments)
+        for i, segment in enumerate(valid_segments):
+            text = (segment.get("full_topic") or segment.get("topic") or "").strip()[:2000]
+            if not text:
+                continue
+            cleaned = self._clean_filler_words(text)
+            existing = [r.get("topic") or r.get("clickbait_title") for r in self.parent.analysis_results[:i]]
+            title = self.parent.generate_clickbait_title(cleaned or text, existing_titles=existing, max_attempts=2, strict_content=True)
+            if title and title != "Untitled Clip":
+                segment["topic"] = title
+                segment["clickbait_title"] = title
+            self.parent.progress_var.set(f"Generating titles... ({i+1}/{total})")
+            if getattr(self.parent, "root", None):
+                self.parent.root.update()
+
+    def match_segments_with_content(self, segments, transcriptions):
+        """Match heatmap segments with transcribed content"""
+        # [SMART FIX] If "segments" is already a dictionary from AI (viral_segments), 
+        # it means we already have the perfect cuts and titles.
+        # So we just convert it to the list format expected by UI.
+        if isinstance(transcriptions, dict) and transcriptions and isinstance(segments, list) == False:
+             # This happens when we skipped heatmap and used AI segments directly
+             # Actually, in analyze_video logic:
+             # if ai_viral_segments: transcriptions = ai_viral_segments
+             # then heatmap_segments is created from it.
+             pass
+
+        results = []
+        
+        # [ROBUST CHECK] Check if we are in Smart Mode (AI-curated segments)
+        # Standard Whisper transcripts don't have 'hook_script'
+        is_smart_mode = False
+        if transcriptions and isinstance(transcriptions, dict):
+            first_key = next(iter(transcriptions))
+            if isinstance(transcriptions[first_key], dict) and 'hook_script' in transcriptions[first_key]:
+                is_smart_mode = True
+                print(f"  [DEBUG] Entering Smart Mode Matching (AI-Curated)")
+        
+        print(f"  [DEBUG] Segment matching: {len(segments)} segments, {len(transcriptions)} transcription chunks, SmartMode: {is_smart_mode}")
+
+        # Raw subtitle cues for transcript extraction (log content must match clip time range)
+        raw_cues = getattr(self.parent, "sub_transcriptions", None) or transcriptions
+
+        for segment in segments:
+            topic = "Topik tidak ditemukan"
+            full_text = ""
+            hook_script = ""
+
+            # LOG FIX: Always extract transcript from cues overlapping clip window
+            clip_start, clip_end = segment["start"], segment["end"]
+            full_text = self._get_transcript_for_clip_range(clip_start, clip_end, raw_cues)
+
+            if is_smart_mode:
+                found = False
+                for _, trans in transcriptions.items():
+                    if abs(trans["start"] - segment["start"]) < 0.1:
+                        topic = trans.get("clickbait_title", trans.get("text", ""))
+                        hook_script = trans.get("hook_script", trans.get("hook_text", ""))
+                        viral_score = trans.get("viral_score", 0)
+                        hook_score = trans.get("hook_score", 0)
+                        final_score = trans.get("final_score", 0)
+                        clickbait_title = trans.get("clickbait_title", trans.get("text", ""))
+                        found = True
+                        if not full_text:
+                            full_text = trans.get("segment_transcript", trans.get("text", ""))
+                        break
+                if not found:
+                    continue
+            else:
+                if not full_text:
+                    full_text = "[Tidak ada transkripsi tersedia]"
+                topic = full_text if len(full_text) < 100 else full_text[:100] + "..."
+                if full_text and full_text != "[Tidak ada transkripsi tersedia]":
+                    hook_script = self._extract_core_hook_from_text(full_text) or " ".join(full_text.split()[:10]).strip()
+                if not hook_script:
+                    hook_script = topic
+            
+            # [BUG FIX] Validate segment duration - AI sometimes returns wrong timestamps
+            calculated_duration = segment['end'] - segment['start']
+
+            if calculated_duration > 300.0:
+                # Bug detected: AI returned wrong timestamps
+                # Recalculate duration from transcription chunk instead
+                print(f"  [BUG FIX] Invalid duration detected: {calculated_duration:.1f}s for segment at {segment['start']:.1f}s")
+                
+                # Find matching transcription to get correct timestamps
+                if is_smart_mode and transcriptions:
+                    for trans in transcriptions.values():
+                        if abs(trans['start'] - segment['start']) < 0.1:
+                            # Use transcription timestamps instead
+                            segment['start'] = trans['start']
+                            segment['end'] = trans['end']
+                            calculated_duration = segment['end'] - segment['start']
+                            print(f"  [BUG FIX] Corrected to: {calculated_duration:.1f}s using transcription timestamps")
+                            break
+                
+                # If still invalid, skip this segment
+                if calculated_duration > 300.0:
+                    print(f"  [BUG FIX] Skipping segment - could not fix duration")
+                    continue
+            
+            # Clip duration: 12–35 seconds
+            if calculated_duration > self.CLIP_MAX_DURATION_SEC:
+                segment['end'] = segment['start'] + self.CLIP_MAX_DURATION_SEC
+                calculated_duration = float(self.CLIP_MAX_DURATION_SEC)
+
+            # Ensure hook never empty (TTS intro) — fallback to topic
+            if not hook_script or not hook_script.strip():
+                hook_script = topic or "Klip"
+            
+            r = {
+                'start': segment['start'],
+                'end': segment['end'],
+                'duration': calculated_duration,
+                'topic': topic,
+                'full_topic': full_text,
+                'hook_script': hook_script,
+                'hook_text': hook_script,
+                'activity': segment['avg_activity'],
+            }
+            if is_smart_mode and found:
+                r['viral_score'] = viral_score
+                r['hook_score'] = hook_score
+                r['final_score'] = final_score
+                r['clickbait_title'] = clickbait_title
+            else:
+                r['viral_score'] = segment.get('viral_score', 0)
+                r['hook_score'] = segment.get('hook_score', 0)
+                act = segment.get('avg_activity', 0.75)
+                act_score = (act * 100) if act <= 1 else min(100, act)
+                r['final_score'] = round(
+                    r['viral_score'] * 0.5 + r['hook_score'] * 0.3 + act_score * 0.2
+                )
+                r['clickbait_title'] = topic or ''
+            results.append(r)
+        
+        final_results = []
+        min_d = float(self.CLIP_MIN_DURATION_SEC)
+        max_d = float(self.CLIP_MAX_DURATION_SEC)
+        print(f"  [FILTER] Duration Rule: {min_d:.0f}s - {max_d:.0f}s")
+
+        for r in results:
+            if r['duration'] >= min_d and r['duration'] <= (max_d + 5.0):
+                final_results.append(r)
+            else:
+                print(f"  [FILTER] Klip dihapus (Durasi: {r['duration']:.1f}s) - {r['topic']}")
+
+        # Rank by score (no threshold), take top 15-25
+        final_results.sort(key=lambda x: x.get('final_score') or x.get('viral_score', 0), reverse=True)
+        max_clips = 25
+        if len(final_results) > max_clips:
+            print(f"  [LIMIT] Selecting top {max_clips} by score from {len(final_results)}")
+            final_results = final_results[:max_clips]
+
+        if not final_results and results:
+            print(f"  [WARN] Semua klip dihapus karena durasi tidak valid (<{min_d}s atau >{max_d}s).")
+
+        # Sort chronologically for UI display
+        final_results.sort(key=lambda x: x['start'])
+        
+        return final_results
+
+    def generate_titles_for_selected(self):
+        """Generate clickbait titles with OpenAI for selected (checked) clips."""
+        if not self.parent.analysis_results:
+            messagebox.showwarning("Peringatan", "Tidak ada segmen untuk diproses")
+            return
+        if not getattr(self.parent, "openai_available", False):
+            messagebox.showwarning("Peringatan", "OpenAI tidak tersedia (tambahkan openai.txt)")
+            return
+
+        checked_segments = []
+        for item_id in self.parent.results_tree.get_children():
+            values = self.parent.results_tree.item(item_id)['values']
+            if values and values[0] == '☑':
+                for result in self.parent.analysis_results:
+                    if (f"{int(result['start']//60):02d}:{int(result['start']%60):02d}" == values[1] and
+                        f"{int(result['end']//60):02d}:{int(result['end']%60):02d}" == values[2]):
+                        checked_segments.append(result)
+                        break
+        if not checked_segments:
+            messagebox.showwarning("Peringatan", "Silakan pilih setidaknya satu segmen")
+            return
+        if not messagebox.askyesno("Konfirmasi", f"Generate judul OpenAI untuk {len(checked_segments)} klip terpilih?"):
+            return
+
+        def task():
+            total = len(checked_segments)
+            existing = []
+            for i, segment in enumerate(checked_segments):
+                self.parent.progress_var.set(f"Generating title {i+1}/{total}...")
+                self.parent.root.after(0, self.parent.root.update_idletasks)
+                text = (segment.get('full_topic') or segment.get('topic') or '').strip()[:2000]
+                if text:
+                    cleaned = self._clean_filler_words(text)
+                    title = self.parent.generate_clickbait_title(cleaned or text, existing_titles=existing, max_attempts=2, strict_content=True)
+                    if title and title != "Untitled Clip":
+                        segment['topic'] = title
+                        segment['clickbait_title'] = title
+                        existing.append(title)
+            self.parent.progress_var.set("Selesai.")
+            self.parent.root.after(0, self.parent.update_results_ui)
+            self.parent.root.after(0, lambda: messagebox.showinfo("Berhasil", f"{total} judul berhasil di-generate."))
+        import threading
+        threading.Thread(target=task, daemon=True).start()
+

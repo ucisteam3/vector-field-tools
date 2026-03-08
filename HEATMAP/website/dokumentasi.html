@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <meta http-equiv="X-Frame-Options" content="ALLOWALL">
+
+
+    <meta http-equiv="Access-Control-Allow-Origin" content="*">
+    <meta http-equiv="Access-Control-Allow-Methods" content="GET, POST, PUT, DELETE, OPTIONS">
+    <meta http-equiv="Access-Control-Allow-Headers" content="Content-Type, Authorization">
+
+
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Dokumentasi API</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+
+
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <style>
+        /* =========================================
+           GLOBAL & VARIABLES
+           ========================================= */
+        :root {
+            --sidebar-width: 260px;
+            --navbar-height: 70px;
+            --primary-bg: #0f172a;
+            --secondary-bg: #1e3a8a;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #172554 100%);
+            color: #f8f9fa;
+            overflow-x: hidden;
+            margin: 0;
+        }
+
+        .wrapper {
+            display: flex;
+            width: 100%;
+            min-height: 100vh;
+        }
+
+        /* =========================================
+           SIDEBAR (FIXED)
+           ========================================= */
+        .sidebar {
+            width: var(--sidebar-width);
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1045;
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .sidebar-logo {
+            padding: 0 25px;
+            height: var(--navbar-height);
+            display: flex;
+            align-items: center;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #fff;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .sidebar-menu {
+            padding: 20px 15px;
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+
+        .nav-link {
+            color: rgba(255, 255, 255, 0.7);
+            padding: 8px 15px;
+            border-radius: 8px;
+            margin-bottom: 2px;
+            transition: 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 500;
+        }
+
+        .nav-link:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        .nav-link.active {
+            background: #2563eb;
+            color: #fff;
+            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
+        }
+
+        /* =========================================
+           SIDEBAR OVERLAY
+           ========================================= */
+        .sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1040;
+            display: none;
+            backdrop-filter: blur(3px);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .sidebar-overlay.show {
+            display: block;
+            opacity: 1;
+        }
+
+        /* =========================================
+           MAIN CONTENT
+           ========================================= */
+        .main-content {
+            width: 100%;
+            margin-left: var(--sidebar-width);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            transition: margin-left 0.3s;
+        }
+
+        /* Custom Select Style - Default (Desktop) */
+        .custom-dark-select {
+            background-color: rgba(255, 255, 255, 0.05);
+            color: #e2e8f0;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 6px 36px 6px 10px;
+            /* Padding standar */
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 12px 10px;
+
+            /* Agar teks tidak kepotong jelek */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+
+            /* Fix untuk Safari/iOS agar border radius tidak aneh */
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .custom-dark-select:focus {
+            outline: none;
+            border-color: #3b82f6;
+            background-color: rgba(15, 23, 42, 1);
+        }
+
+        /* Fix Warna Option di HP/Browser */
+        .custom-dark-select option {
+            background-color: #0f172a;
+            color: #fff;
+            padding: 10px;
+        }
+
+        /* =========================================
+           RESPONSIVE FIX (Agar Rapi di HP)
+           ========================================= */
+        @media (max-width: 576px) {
+
+            /* Kecilkan padding navbar */
+            .top-navbar {
+                padding: 0 15px !important;
+            }
+
+            /* Kecilkan ukuran dropdown */
+            .custom-dark-select {
+                font-size: 0.75rem;
+                /* Font lebih kecil */
+                padding: 5px 25px 5px 8px;
+                /* Padding lebih rapat */
+                height: 32px;
+                /* Tinggi fix agar sejajar */
+                width: 120px;
+                /* Batasi lebar agar tidak nabrak logo user */
+                background-position: right 0.5rem center;
+                /* Geser panah */
+            }
+
+            /* Sembunyikan icon kartu jika layar terlalu sempit */
+            .mobile-hide-icon {
+                display: none !important;
+            }
+
+            /* Hapus padding kiri pada select karena icon hilang */
+            .mobile-no-padding-left {
+                padding-left: 10px !important;
+            }
+        }
+
+        .top-navbar {
+            height: var(--navbar-height);
+            position: sticky;
+            top: 0;
+            z-index: 1030;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 0 30px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between !important;
+        }
+
+        .sidebar-toggler {
+            display: none;
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            margin-right: auto;
+            cursor: pointer;
+        }
+
+        .footer {
+            padding: 20px 30px !important;
+            text-align: center !important;
+            background: rgba(0, 0, 0, 0.2) !important;
+            border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
+            font-size: 0.85rem !important;
+            color: rgba(255, 255, 255, 0.5) !important;
+            margin-top: auto !important;
+        }
+
+        /* =========================================
+           WHATSAPP FLOATING BUTTON STYLES (FIXED)
+           ========================================= */
+        .wa-float-container {
+            position: fixed;
+            bottom: 90px;
+            right: 30px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: row-reverse;
+            align-items: center;
+            gap: 15px;
+            pointer-events: none;
+        }
+
+        .wa-float-btn {
+            width: 60px;
+            height: 60px;
+            background-color: #25d366;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            font-size: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+            text-decoration: none;
+            transition: all 0.3s ease;
+            position: relative;
+            animation: wa-pulse 2s infinite;
+            pointer-events: auto;
+        }
+
+        .wa-float-btn:hover {
+            background-color: #1faf53;
+            transform: scale(1.1);
+            color: white;
+        }
+
+        /* Tooltip text info */
+        .wa-info-box {
+            background: white;
+            color: #333;
+            padding: 8px 15px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            opacity: 0;
+            transform: translateX(20px);
+            transition: all 0.3s ease;
+            white-space: nowrap;
+            position: relative;
+            pointer-events: none;
+        }
+
+        .wa-info-box::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            right: -6px;
+            transform: translateY(-50%);
+            border-width: 6px 0 6px 6px;
+            border-style: solid;
+            border-color: transparent transparent transparent white;
+        }
+
+        .wa-float-btn:hover~.wa-info-box {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        @keyframes wa-pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.7);
+            }
+
+            70% {
+                box-shadow: 0 0 0 20px rgba(37, 211, 102, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(37, 211, 102, 0);
+            }
+        }
+
+        /* =========================================
+           RESPONSIVE (MOBILE)
+           ========================================= */
+        @media (max-width: 991.98px) {
+            .sidebar {
+                transform: translateX(-100%);
+                background: #0f172a;
+                box-shadow: 5px 0 15px rgba(0, 0, 0, 0.3);
+            }
+
+            .sidebar.show {
+                transform: translateX(0);
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+
+            .sidebar-toggler {
+                display: block;
+            }
+
+            .top-navbar {
+                padding: 0 20px;
+                justify-content: space-between;
+            }
+
+            .wa-float-container {
+                bottom: 80px;
+                right: 20px;
+            }
+
+            .wa-float-btn {
+                width: 50px;
+                height: 50px;
+                font-size: 26px;
+            }
+
+            .wa-info-box {
+                display: none !important;
+            }
+        }
+    </style>
+    <style>
+        /* SCROLL BEHAVIOR AGAR HALUS */
+        html {
+            scroll-behavior: smooth;
+        }
+
+        .content-body {
+            padding: 30px;
+            background-color: #f4f6f9;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+
+        .page-title {
+            color: #1e293b;
+            font-weight: 800;
+            font-size: 1.8rem;
+            margin-bottom: 5px;
+        }
+
+        .text-subtitle {
+            color: #64748b;
+            font-size: 0.95rem;
+        }
+
+        /* CARD STYLING */
+        .card-doc {
+            background: #fff;
+            border-radius: 16px;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+            /* Penting agar saat diklik tidak terlalu mepet atas */
+            scroll-margin-top: 100px;
+        }
+
+        .card-header-doc {
+            background: #f8fafc;
+            padding: 15px 25px;
+            border-bottom: 1px solid #e2e8f0;
+            font-weight: 700;
+            color: #334155;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 1rem;
+        }
+
+        .card-body-doc {
+            padding: 25px;
+            color: #475569;
+            line-height: 1.6;
+            font-size: 0.95rem;
+        }
+
+        /* ENDPOINT & METHODS */
+        .endpoint-url {
+            font-family: 'Roboto Mono', monospace;
+            background: #f1f5f9;
+            padding: 8px 12px;
+            border-radius: 6px;
+            color: #334155;
+            font-weight: 600;
+            font-size: 0.85rem;
+            border: 1px solid #cbd5e0;
+            display: inline-block;
+            word-break: break-all;
+        }
+
+        .badge-method {
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            color: #fff;
+            letter-spacing: 0.5px;
+            margin-right: 10px;
+            min-width: 60px;
+            text-align: center;
+            display: inline-block;
+        }
+
+        .badge-post {
+            background: #10b981;
+        }
+
+        .badge-get {
+            background: #3b82f6;
+        }
+
+        .badge-webhook {
+            background: #8b5cf6;
+        }
+
+        /* CODE BLOCKS */
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 10px;
+            font-size: 0.8rem;
+            overflow-x: auto;
+            border: 1px solid #334155;
+            margin-top: 10px;
+            font-family: 'Roboto Mono', monospace;
+            white-space: pre;
+        }
+
+        .code-title {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #64748b;
+            font-weight: 700;
+            margin-top: 15px;
+            margin-bottom: 5px;
+            display: block;
+        }
+
+        .code-title:first-child {
+            margin-top: 0;
+        }
+
+        /* TABLE PARAMS */
+        .table-params th {
+            background-color: #f8fafc;
+            color: #475569;
+            font-weight: 600;
+            width: 30%;
+            font-size: 0.85rem;
+        }
+
+        .table-params td {
+            font-size: 0.85rem;
+            vertical-align: middle;
+        }
+
+        /* UTILS */
+        .input-compact {
+            font-size: 0.8rem !important;
+            padding: 5px 10px !important;
+            height: 34px !important;
+            background-color: #f8fafc !important;
+            font-family: monospace;
+        }
+
+        .btn-compact {
+            height: 34px !important;
+            display: flex;
+            align-items: center;
+            padding: 0 12px !important;
+        }
+
+        .step-number {
+            display: inline-flex;
+            width: 24px;
+            height: 24px;
+            background: #e0e7ff;
+            color: #4338ca;
+            border-radius: 50%;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.75rem;
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+
+        /* --- ACTIVE LINK STYLING (NEW) --- */
+        .list-group-item {
+            border: none;
+            border-left: 3px solid transparent;
+            color: #64748b;
+            transition: all 0.2s;
+        }
+
+        /* Saat aktif warnanya jadi biru muda dan border kiri menebal */
+        .list-group-item.active {
+            background-color: #eff6ff !important;
+            color: #2563eb !important;
+            font-weight: 700;
+            border-left: 3px solid #2563eb;
+            border-radius: 0;
+        }
+
+        .list-group-item:hover {
+            background-color: #f8fafc;
+            color: #334155;
+        }
+    </style>
+</head>
+
+<body>
+
+
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+    <div class="wrapper">
+
+        <nav class="sidebar d-flex flex-column" id="sidebar">
+
+
+            <div class="sidebar-logo mb-2">
+                <i class="bi bi-qr-code text-primary me-2"></i> KlikQRIS
+            </div>
+
+
+            <div class="px-3">
+                <div class="p-2 rounded bg-dark bg-opacity-25 border border-secondary">
+                    <small class="text-secondary d-block" style="font-size: 0.65rem;">ID Merchant</small>
+                    <div class="d-flex align-items-center justify-content-between">
+                        <span class="fw-bold text-white font-monospace" style="font-size: 0.8rem;">
+                            176933217914
+                        </span>
+                        <i class="bi bi-person-badge text-primary"></i>
+                    </div>
+                </div>
+            </div>
+
+
+            <div class="sidebar-menu flex-grow-1">
+
+
+                <div id="menu-klikqris" class="menu-animate" style="display: block;">
+                    <small class="text-white-50 px-3 mb-2 d-block mt-2" style="font-size: 0.7rem;">MENU KLIKQRIS</small>
+
+                    <a href="https://klikqris.com/panel_user" class="nav-link ">
+                        <i class="bi bi-speedometer2"></i> Dashboard
+                    </a>
+                    <a href="https://klikqris.com/saldo" class="nav-link ">
+                        <i class="bi bi-wallet2"></i> Saldo
+                    </a>
+                    <a href="https://klikqris.com/payment" class="nav-link ">
+                        <i class="bi bi-credit-card"></i> Payment
+                    </a>
+                    <a href="https://klikqris.com/transaksi_direct" class="nav-link ">
+                        <i class="bi bi-link-45deg"></i> Direct Link
+                    </a>
+                    <a href="https://klikqris.com/transaksi" class="nav-link ">
+                        <i class="bi bi-receipt"></i> Transaksi
+                    </a>
+                    <a href="https://klikqris.com/settings" class="nav-link ">
+                        <i class="bi bi-gear"></i> Settings
+                    </a>
+                    <a href="https://klikqris.com/ticket" class="nav-link ">
+                        <i class="bi bi-ticket-perforated"></i> Tickets
+                    </a>
+                    <a href="https://klikqris.com/dokumentasi" class="nav-link active">
+                        <i class="bi bi-journal-code"></i> Dokumentasi API
+                    </a>
+                    <a href="https://klikqris.com/profil" class="nav-link ">
+                        <i class="bi bi-person-circle"></i> Profil
+                    </a>
+                </div>
+
+
+                <div id="menu-mypg" class="menu-animate" style="display: none;">
+                    <small class="text-white-50 px-3 mb-2 d-block mt-2" style="font-size: 0.7rem;">MENU MY PG</small>
+
+                    <a href="https://klikqris.com/pg_dashboard" class="nav-link ">
+                        <i class="bi bi-speedometer"></i> Dashboard
+                    </a>
+
+
+
+
+                    <a href="https://klikqris.com/setup_pembayaran" class="nav-link ">
+                        <i class="bi bi-qr-code-scan"></i> Setup Pembayaran
+                    </a>
+
+
+                    <a href="https://klikqris.com/pg/android" class="nav-link ">
+                        <i class="bi bi-android2"></i> Download Android
+                    </a>
+
+                    <a href="https://klikqris.com/pg/biaya" class="nav-link ">
+                        <i class="bi bi-cash-coin"></i> Biaya dan cara kerja
+                    </a>
+
+                    <a href="https://klikqris.com/pg/dokumentasi" class="nav-link ">
+                        <i class="bi bi-file-earmark-code"></i> Dokumentasi API
+                    </a>
+
+                    <a href="https://klikqris.com/pg/referal" class="nav-link ">
+                        <i class="bi bi-people-fill"></i> Referal
+                    </a>
+                </div>
+
+
+                <form id="logout-form" action="https://klikqris.com/logout" method="POST" style="display: none;"><input
+                        type="hidden" name="_token" value="ZD3sY0PdZtBzJIIHICAqtEJLJRpsK4RmrzIAWqIo"></form>
+                <a href="https://klikqris.com/logout" class="nav-link text-danger mt-3"
+                    onclick="event.preventDefault(); document.getElementById('logout-form').submit();">
+                    <i class="bi bi-box-arrow-right"></i> Logout
+                </a>
+            </div>
+        </nav>
+
+
+        <main class="main-content">
+
+            <header class="top-navbar d-flex align-items-center justify-content-between">
+
+
+                <div class="d-flex align-items-center">
+
+
+                    <button class="sidebar-toggler me-3 border-0 bg-transparent text-white" type="button"
+                        onclick="toggleSidebar()">
+                        <i class="bi bi-list fs-3"></i>
+                    </button>
+
+
+                    <div class="position-relative d-flex align-items-center">
+
+                        <i class="bi bi-credit-card-2-front position-absolute text-white-50 mobile-hide-icon"
+                            style="left: 10px; font-size: 14px; z-index: 2; pointer-events: none;"></i>
+
+                        <meta name="csrf-token" content="ZD3sY0PdZtBzJIIHICAqtEJLJRpsK4RmrzIAWqIo">
+
+                        <select id="gatewaySelect"
+                            class="form-select form-select-sm custom-dark-select ps-5 mobile-no-padding-left"
+                            aria-label="Pilih Payment Gateway">
+                            <option value="PG KlikQRIS" selected>PG KlikQRIS</option>
+                            <option value="MY PG">MY PG</option>
+                        </select>
+                    </div>
+
+                </div>
+
+
+                <div class="d-flex align-items-center gap-2">
+                    <div class="text-end d-none d-sm-block">
+                        <span class="d-block fw-bold text-white fs-6" style="line-height: 1.2;">Lanaya Cloud</span>
+                        <small class="text-white-50" style="font-size: 0.7rem;">hasbyzure@gmail.com</small>
+                    </div>
+                    <img src="https://ui-avatars.com/api/?name=Lanaya+Cloud&background=3b82f6&color=fff"
+                        class="rounded-circle border border-2 border-white-50 shadow-sm" width="38" height="38"
+                        alt="User">
+                </div>
+
+            </header>
+
+
+            <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+            <script>
+                $(document).ready(function () {
+                    if ($('#gatewaySelect').length > 0) {
+                        $('#gatewaySelect').change(function () {
+                            var selectedMode = $(this).val();
+                            var csrfToken = $('meta[name="csrf-token"]').attr('content');
+
+                            $(this).prop('disabled', true);
+
+                            $.ajax({
+                                url: "https://klikqris.com/custom/update-mode",
+                                type: "POST",
+                                data: {
+                                    mode: selectedMode,
+                                    _token: csrfToken
+                                },
+                                success: function (response) {
+
+                                    if (selectedMode === 'MY PG') {
+                                        window.location.href = "https://klikqris.com/pg_dashboard";
+                                    } else {
+                                        window.location.href = "https://klikqris.com/panel_user";
+                                    }
+                                },
+                                error: function (xhr) {
+                                    alert('Gagal mengubah mode. Silakan coba lagi.');
+                                    $('#gatewaySelect').prop('disabled', false);
+                                }
+                            });
+                        });
+                    }
+                });
+            </script>
+
+            <div class="content-body">
+                <div class="d-flex justify-content-between align-items-center mb-5 flex-wrap gap-2">
+                    <div>
+                        <h2 class="page-title">Developer API Documentation</h2>
+                        <p class="text-subtitle mb-0">Integrasi pembayaran QRIS Dinamis (DANA) otomatis.</p>
+                    </div>
+                    <div>
+                        <button class="btn btn-dark btn-sm" onclick="window.print()"><i
+                                class="bi bi-printer me-2"></i>Cetak
+                            Docs</button>
+                    </div>
+                </div>
+
+                <div class="row">
+
+                    <div class="col-lg-8">
+
+
+                        <div class="card-doc section-spy" id="auth">
+                            <div class="card-header-doc">
+                                <span><i class="bi bi-key-fill me-2 text-primary"></i> 1. Kredensial API</span>
+                            </div>
+                            <div class="card-body-doc">
+                                <p class="mb-3">Setiap request ke API wajib menyertakan <strong>Header</strong> berikut:
+                                </p>
+
+                                <div class="table-responsive mb-4">
+                                    <table class="table table-bordered table-params mb-0">
+                                        <tbody>
+                                            <tr>
+                                                <th>x-api-key</th>
+                                                <td>
+                                                    <div class="input-group flex-nowrap">
+                                                        <input type="text" class="form-control input-compact"
+                                                            value="OHJP3qz0RthcVAQ0XhrVbdVcoDggmpBQGqKnvMUX" readonly
+                                                            id="apiKeyInfo">
+                                                        <button class="btn btn-outline-primary btn-compact"
+                                                            onclick="copyToClipboard('apiKeyInfo')"><i
+                                                                class="bi bi-clipboard"></i></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <th>id_merchant</th>
+                                                <td>
+                                                    <div class="input-group flex-nowrap">
+                                                        <input type="text" class="form-control input-compact"
+                                                            value="176933217914" readonly id="mercIdInfo">
+                                                        <button class="btn btn-outline-primary btn-compact"
+                                                            onclick="copyToClipboard('mercIdInfo')"><i
+                                                                class="bi bi-clipboard"></i></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="alert alert-primary d-flex align-items-center mb-0"
+                                    style="padding: 10px 15px;">
+                                    <i class="bi bi-link-45deg fs-4 me-2"></i>
+                                    <div>
+                                        <small class="fw-bold d-block text-uppercase" style="font-size: 0.7rem;">Base
+                                            URL</small>
+                                        <span class="font-monospace">https://klikqris.com/api</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+
+                        <div class="card-doc section-spy" id="create">
+                            <div class="card-header-doc">
+                                <span><span class="badge-method badge-post">POST</span> Create Transaction</span>
+                            </div>
+                            <div class="card-body-doc">
+                                <p class="mb-2">Membuat tagihan QRIS baru.</p>
+                                <p class="mb-3"><strong>Endpoint:</strong> <span
+                                        class="endpoint-url">/qris/create</span></p>
+
+                                <div class="alert alert-warning py-2 px-3 mb-4" style="font-size: 0.85rem;">
+                                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                                    <strong>Penting:</strong> Kode unik mungkin ditambahkan otomatis. Gunakan
+                                    <code>total_amount</code> dari response JSON untuk ditampilkan ke user.
+                                </div>
+
+                                <h6 class="fw-bold small text-uppercase text-muted mb-2">Body Parameters (JSON)</h6>
+                                <table class="table table-bordered table-params table-sm mb-4">
+                                    <tbody>
+                                        <tr>
+                                            <th>order_id <span class="text-danger">*</span></th>
+                                            <td>String. ID unik transaksi Anda (misal: INV-123).</td>
+                                        </tr>
+                                        <tr>
+                                            <th>amount <span class="text-danger">*</span></th>
+                                            <td>Integer. Nominal bayar.</td>
+                                        </tr>
+                                        <tr>
+                                            <th>id_merchant <span class="text-danger">*</span></th>
+                                            <td>String. ID Merchant Anda.</td>
+                                        </tr>
+                                        <tr>
+                                            <th>keterangan</th>
+                                            <td>String. Catatan transaksi (Opsional).</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+
+                                <span class="code-title">PHP cURL REQUEST</span>
+                                <pre>
+$curl = curl_init();
+
+curl_setopt_array($curl, array(
+  CURLOPT_URL => 'https://klikqris.com/api/qris/create',
+  CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_CUSTOMREQUEST => 'POST',
+  CURLOPT_POSTFIELDS =>'{
+    "order_id": "INV-123",
+    "id_merchant":176933217914,
+    "amount": 1600,
+    "keterangan": "Pembayaran Invoice #123"
+}',
+  CURLOPT_HTTPHEADER => array(
+    'Content-Type: application/json',
+    'x-api-key: OHJP3qz0RthcVAQ0XhrVbdVcoDggmpBQGqKnvMUX',
+    'id_merchant: 176933217914'
+  ),
+));
+
+$response = curl_exec($curl);
+</pre>
+
+                                <span class="code-title">RESPONSE SUKSES (JSON)</span>
+                                <pre>
+{
+    "status": true,
+    "message": "Transaction Created Successfully",
+    "data": {
+        "order_id": "INV-123",
+        "id_merchant": 176933217914
+        "nama_toko": "Toko Anda",
+        "amount": "1600.00",
+        "amount_uniq": "512.00",
+        "total_amount": "2112.00", <span class="text-warning"> // ini adalah total amount yang harus dibayar oleh user</span>
+        "status": "PENDING",
+        "qris_url": "https://klikqris.com/storage/qris_api/qris_INV-123.png",
+        "qris_image": "data:image/png;base64,iVBORw0KGgoAAAA...",
+        "expired_at": "2026-01-16 22:52:43"
+    }
+}
+</pre>
+                            </div>
+                        </div>
+
+
+                        <div class="card-doc section-spy" id="webhook">
+                            <div class="card-header-doc">
+                                <span><span class="badge-method badge-webhook">POST</span> Webhook / Callback URL</span>
+                            </div>
+                            <div class="card-body-doc">
+                                <p class="mb-3">
+                                    Sistem kami akan mengirimkan data JSON secara otomatis ke server Anda ketika status
+                                    pembayaran
+                                    berubah menjadi <strong>SUCCESS (PAID)</strong>.
+                                </p>
+
+                                <div class="alert alert-info py-2 px-3 mb-4" style="font-size: 0.85rem;">
+                                    <i class="bi bi-info-circle-fill me-1"></i>
+                                    <strong>Setup:</strong> Masuk ke menu <strong>Settings</strong> di dashboard untuk
+                                    memasukkan
+                                    URL Callback Anda.
+                                </div>
+
+                                <h6 class="fw-bold small text-uppercase text-muted mb-2">Payload yang dikirim ke Server
+                                    Anda:</h6>
+
+                                <span class="code-title">JSON PAYLOAD</span>
+                                <pre>
+{
+    "order_id": "DIRECT-176835469862-8460-202601252147",
+    "status": "PAID",
+    "amount": 1000,
+    "total_amount": 1215,
+    "payment_date": "2026-01-25 21:48:01",
+    "created_at": "2026-01-25 21:47:42",
+    "updated_at": "2026-01-25 21:48:01",
+    "keterangan": "Pembayaran Paket A",
+    "direct_url": "https://klikqris.com/payqris/176835469862/INV-123456"
+}
+</pre>
+                                <p class="small text-muted mt-2">
+                                    *Server Anda harus merespon dengan HTTP Code <strong>200 OK</strong> agar sistem
+                                    tidak mencoba
+                                    mengirim ulang.
+                                </p>
+                            </div>
+                        </div>
+
+
+                        <div class="card-doc section-spy" id="status">
+                            <div class="card-header-doc">
+                                <span><span class="badge-method badge-get">GET</span> Check Status</span>
+                            </div>
+                            <div class="card-body-doc">
+                                <p class="mb-3">Cek status pembayaran spesifik berdasarkan Order ID.</p>
+                                <p class="mb-4"><strong>Endpoint:</strong> <span
+                                        class="endpoint-url">/qris/status/{order_id}</span></p>
+
+                                <span class="code-title">PHP cURL REQUEST</span>
+                                <pre>
+curl_setopt_array($curl, array(
+  CURLOPT_URL => 'https://klikqris.com/api/qris/status/INV-123',
+  CURLOPT_CUSTOMREQUEST => 'GET',
+  CURLOPT_HTTPHEADER => array(
+    'x-api-key: OHJP3qz0RthcVAQ0XhrVbdVcoDggmpBQGqKnvMUX',
+    'id_merchant: 176933217914'
+  ),
+));
+</pre>
+
+                                <div class="mt-4">
+                                    <ul class="nav nav-tabs" id="statusTab" role="tablist"
+                                        style="border-bottom: 1px solid #334155;">
+                                        <li class="nav-item">
+                                            <button class="nav-link active btn-sm text-dark fw-bold"
+                                                data-bs-toggle="tab" data-bs-target="#resSuccess" type="button">Status:
+                                                SUCCESS</button>
+                                        </li>
+                                        <li class="nav-item">
+                                            <button class="nav-link btn-sm text-secondary" data-bs-toggle="tab"
+                                                data-bs-target="#resPending" type="button">Status: PENDING</button>
+                                        </li>
+                                        <li class="nav-item">
+                                            <button class="nav-link btn-sm text-secondary" data-bs-toggle="tab"
+                                                data-bs-target="#resExpired" type="button">Status: EXPIRED</button>
+                                        </li>
+                                    </ul>
+                                    <div class="tab-content" id="statusTabContent">
+
+                                        <div class="tab-pane fade show active" id="resSuccess">
+                                            <pre
+                                                style="border-top-left-radius: 0; border-top-right-radius: 0; margin-top: 0;">
+{
+    "status": true,
+    "message": "Transaction detail retrieved",
+    "data": {
+        "order_id": "INV-123",
+        "status": "SUCCESS",
+        "amount": "1600.00",
+        "total_amount": "2112.00",
+        "paid_at": "2026-01-16 22:28:58",
+        "qris_url": null
+    }
+}
+</pre>
+                                        </div>
+
+                                        <div class="tab-pane fade" id="resPending">
+                                            <pre
+                                                style="border-top-left-radius: 0; border-top-right-radius: 0; margin-top: 0;">
+{
+    "status": true,
+    "message": "Transaction detail retrieved",
+    "data": {
+        "order_id": "INV-123",
+        "status": "PENDING",
+        "total_amount": "2112.00",
+        "expired_at": "2026-01-16 22:52:43",
+        "qris_url": "https://klikqris.com/storage/...",
+        "qris_image": "data:image/png;base64,..."
+    }
+}
+</pre>
+                                        </div>
+
+                                        <div class="tab-pane fade" id="resExpired">
+                                            <pre
+                                                style="border-top-left-radius: 0; border-top-right-radius: 0; margin-top: 0;">
+{
+    "status": true,
+    "message": "Transaction detail retrieved",
+    "data": {
+        "order_id": "INV-123",
+        "status": "EXPIRED",
+        "total_amount": "2112.00",
+        "expired_at": "2026-01-16 22:52:43",
+        "paid_at": null
+    }
+}
+</pre>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+
+                        <div class="card-doc section-spy" id="history">
+                            <div class="card-header-doc">
+                                <span><span class="badge-method badge-get">GET</span> Transaction History</span>
+                            </div>
+                            <div class="card-body-doc">
+                                <p class="mb-3">Mendapatkan daftar riwayat transaksi (Pagination).</p>
+                                <p class="mb-4"><strong>Endpoint:</strong> <span
+                                        class="endpoint-url">/qris/history</span></p>
+
+                                <p class="small text-muted mb-2"><strong>Optional Params:</strong> <code>?page=2</code>
+                                </p>
+
+                                <span class="code-title">RESPONSE (JSON)</span>
+                                <pre>
+{
+    "status": true,
+    "data": {
+        "current_page": 1,
+        "data": [
+            {
+                "order_id": "INV-123",
+                "created_at": "2026-01-16 22:22:43",
+                "total_amount": "2112.00",
+                "status": "SUCCESS",
+                "type": "DANA",
+                "keterangan": "coba webhook",
+                "via": "API"
+            },
+            {
+                "order_id": "INV-23233",
+                "created_at": "2026-01-16 22:22:14",
+                "total_amount": "2208.00",
+                "status": "PENDING",
+                "via": "API"
+            }
+        ],
+        "first_page_url": "https://klikqris.com/api/qris/history?page=1",
+        "next_page_url": null,
+        "per_page": 30,
+        "total": 23
+    }
+}
+</pre>
+                            </div>
+                        </div>
+
+                    </div>
+
+
+                    <div class="col-lg-4">
+                        <div class="sticky-top" style="top: 20px; z-index: 10;">
+
+
+                            <div class="card-doc">
+                                <div class="card-header-doc bg-light small fw-bold text-uppercase">
+                                    Daftar Isi
+                                </div>
+                                <div class="card-body-doc p-0">
+
+                                    <div class="list-group list-group-flush" id="toc-list">
+                                        <a href="#auth" class="list-group-item list-group-item-action small py-3">1.
+                                            Kredensial
+                                            API</a>
+                                        <a href="#create" class="list-group-item list-group-item-action small py-3">2.
+                                            Create
+                                            Transaction</a>
+                                        <a href="#webhook"
+                                            class="list-group-item list-group-item-action small fw-bold py-3">3.
+                                            Webhook (Callback)</a>
+                                        <a href="#status" class="list-group-item list-group-item-action small py-3">4.
+                                            Check
+                                            Status</a>
+                                        <a href="#history" class="list-group-item list-group-item-action small py-3">5.
+                                            History</a>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="card-doc">
+                                <div class="card-header-doc bg-light small fw-bold text-uppercase">
+                                    Informasi Status
+                                </div>
+                                <div class="card-body-doc p-0">
+                                    <table class="table table-striped mb-0" style="font-size: 0.85rem;">
+                                        <tr>
+                                            <td class="px-4 py-3"><span
+                                                    class="badge bg-warning text-dark">PENDING</span></td>
+                                            <td class="px-4 py-3 text-muted">Menunggu pembayaran.</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="px-4 py-3"><span class="badge bg-success">SUCCESS</span></td>
+                                            <td class="px-4 py-3 text-muted">Dana berhasil masuk.</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="px-4 py-3"><span class="badge bg-danger">EXPIRED</span></td>
+                                            <td class="px-4 py-3 text-muted">Waktu bayar habis.</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div class="text-center mt-4 pb-5">
+                                <p class="small text-muted mb-2">Butuh bantuan teknis?</p>
+                                <a href="https://wa.me/6285397222785" target="_blank"
+                                    class="btn btn-outline-success btn-sm w-100 fw-bold">
+                                    <i class="bi bi-whatsapp me-1"></i> Hubungi WhatsApp
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+
+            <script>
+                function copyToClipboard(elementId) {
+                    var copyText = document.getElementById(elementId);
+                    copyText.select();
+                    copyText.setSelectionRange(0, 99999);
+                    navigator.clipboard.writeText(copyText.value).then(() => {
+                        alert("Berhasil disalin!");
+                    });
+                }
+
+
+                document.addEventListener('DOMContentLoaded', function () {
+                    const sections = document.querySelectorAll('.section-spy');
+                    const navLinks = document.querySelectorAll('#toc-list .list-group-item');
+
+
+                    function changeLinkState() {
+                        let index = sections.length;
+
+
+                        while (--index && window.scrollY + 150 < sections[index].offsetTop) { }
+
+                        navLinks.forEach((link) => link.classList.remove('active'));
+
+
+
+                        if (index >= 0) {
+                            navLinks[index].classList.add('active');
+                        }
+                    }
+
+
+                    window.addEventListener('scroll', changeLinkState);
+
+
+                    changeLinkState();
+                });
+            </script>
+
+        </main>
+    </div>
+
+
+    <div class="wa-float-container">
+        <a href="https://chat.whatsapp.com/HpD0NTPLcfG8DyqqCxy3qq" class="wa-float-btn" target="_blank"
+            title="Join Group WhatsApp">
+            <i class="bi bi-whatsapp"></i>
+        </a>
+        <div class="wa-info-box">
+            Butuh Bantuan? Join Grup WA
+        </div>
+    </div>
+
+
+
+    <script>
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+
+            sidebar.classList.toggle('show');
+            overlay.classList.toggle('show');
+        }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+
+
+
+</body>
+
+</html>

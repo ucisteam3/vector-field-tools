@@ -1,0 +1,376 @@
+/* ========================================
+   CUSTOM STYLES - YouTube Heatmap Analyzer
+   ======================================== */
+
+/* ========================================
+   NAVBAR
+   ======================================== */
+.navbar {
+    background: rgba(10, 15, 30, 0.95) !important;
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border-primary);
+    padding: var(--space-4) 0;
+    transition: all var(--transition-base);
+}
+
+.navbar.scrolled {
+    background: rgba(10, 15, 30, 1) !important;
+    box-shadow: var(--shadow-lg);
+}
+
+.navbar-brand {
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--text-primary) !important;
+    display: flex;
+    align-items-center;
+    gap: var(--space-2);
+}
+
+.navbar-brand i {
+    font-size: 1.5rem;
+    color: var(--color-primary-400);
+}
+
+.nav-link {
+    color: var(--text-secondary) !important;
+    font-weight: 500;
+    padding: var(--space-2) var(--space-4) !important;
+    transition: all var(--transition-base);
+    position: relative;
+}
+
+.nav-link:hover {
+    color: var(--color-primary-400) !important;
+}
+
+.nav-link::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 2px;
+    background: var(--gradient-blue);
+    transition: width var(--transition-base);
+}
+
+.nav-link:hover::after {
+    width: 80%;
+}
+
+/* ========================================
+   HERO SECTION
+   ======================================== */
+.hero-section {
+    position: relative;
+    background: var(--bg-primary);
+    overflow: hidden;
+}
+
+.hero-section::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: radial-gradient(circle at 20% 50%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 80% 80%, rgba(139, 92, 246, 0.1) 0%, transparent 50%);
+    pointer-events: none;
+}
+
+.hero-section .container {
+    position: relative;
+    z-index: 1;
+}
+
+.display-1 {
+    font-size: clamp(2.5rem, 5vw, 4rem);
+    line-height: 1.1;
+}
+
+/* ========================================
+   FOOTER
+   ======================================== */
+footer {
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-primary);
+    padding: var(--space-16) 0 var(--space-8);
+}
+
+footer .footer-brand {
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin-bottom: var(--space-4);
+}
+
+footer h5 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--space-4);
+}
+
+footer a {
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color var(--transition-base);
+    display: block;
+    margin-bottom: var(--space-2);
+}
+
+footer a:hover {
+    color: var(--color-primary-400);
+}
+
+footer .social-links a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    margin-right: var(--space-2);
+    transition: all var(--transition-base);
+}
+
+footer .social-links a:hover {
+    background: var(--color-primary-500);
+    transform: translateY(-2px);
+}
+
+/* ========================================
+   DASHBOARD SPECIFIC
+   ======================================== */
+.dashboard-sidebar {
+    background: var(--bg-card);
+    border-right: 1px solid var(--border-primary);
+    min-height: 100vh;
+    padding: var(--space-6);
+}
+
+.dashboard-sidebar .nav-link {
+    color: var(--text-secondary);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-2);
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.dashboard-sidebar .nav-link:hover,
+.dashboard-sidebar .nav-link.active {
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--color-primary-400);
+}
+
+.dashboard-sidebar .nav-link i {
+    font-size: 1.25rem;
+}
+
+/* Progress Bar */
+.progress {
+    height: 8px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+}
+
+.progress-bar {
+    background: var(--gradient-blue);
+    transition: width var(--transition-slow);
+}
+
+/* License Card */
+.license-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-xl);
+    padding: var(--space-6);
+    position: relative;
+    overflow: hidden;
+}
+
+.license-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: var(--gradient-blue);
+}
+
+.license-key {
+    font-family: 'Courier New', monospace;
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    letter-spacing: 0.05em;
+}
+
+/* Tables */
+.table-modern {
+    background: transparent;
+    color: var(--text-secondary);
+}
+
+.table-modern thead {
+    background: rgba(59, 130, 246, 0.05);
+    border-bottom: 2px solid rgba(59, 130, 246, 0.2);
+}
+
+.table-modern thead th {
+    color: var(--text-primary);
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    padding: var(--space-4);
+    border: none;
+}
+
+.table-modern tbody tr {
+    border-bottom: 1px solid var(--border-secondary);
+    transition: background var(--transition-base);
+}
+
+.table-modern tbody tr:hover {
+    background: rgba(59, 130, 246, 0.03);
+}
+
+.table-modern tbody td {
+    padding: var(--space-4);
+    vertical-align: middle;
+    border: none;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: var(--space-16) var(--space-8);
+}
+
+.empty-state i {
+    font-size: 4rem;
+    color: var(--text-muted);
+    margin-bottom: var(--space-4);
+    opacity: 0.5;
+}
+
+.empty-state h5 {
+    color: var(--text-secondary);
+    margin-bottom: var(--space-2);
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    margin-bottom: 0;
+}
+
+/* ========================================
+   AUTH PAGES
+   ======================================== */
+.auth-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-8);
+    background: var(--bg-primary);
+    position: relative;
+    overflow: hidden;
+}
+
+.auth-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: radial-gradient(circle at 30% 50%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+        radial-gradient(circle at 70% 80%, rgba(139, 92, 246, 0.15) 0%, transparent 50%);
+    pointer-events: none;
+}
+
+.auth-card {
+    background: var(--bg-card);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-2xl);
+    padding: var(--space-10);
+    max-width: 480px;
+    width: 100%;
+    position: relative;
+    z-index: 1;
+}
+
+.auth-header {
+    text-align: center;
+    margin-bottom: var(--space-8);
+}
+
+.auth-header h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    margin-bottom: var(--space-2);
+}
+
+.auth-header p {
+    color: var(--text-muted);
+    margin-bottom: 0;
+}
+
+/* ========================================
+   RESPONSIVE
+   ======================================== */
+@media (max-width: 768px) {
+    .hero-section {
+        padding: var(--space-16) 0;
+    }
+
+    .display-1 {
+        font-size: 2rem;
+    }
+
+    .auth-card {
+        padding: var(--space-6);
+    }
+
+    .dashboard-sidebar {
+        position: fixed;
+        top: 0;
+        left: -100%;
+        width: 280px;
+        z-index: 1000;
+        transition: left var(--transition-base);
+    }
+
+    .dashboard-sidebar.show {
+        left: 0;
+    }
+}
+
+/* ========================================
+   UTILITY OVERRIDES
+   ======================================== */
+.min-vh-100 {
+    min-height: 100vh;
+}
+
+.shadow-2xl {
+    box-shadow: var(--shadow-2xl) !important;
+}
+
+.text-purple {
+    color: #8b5cf6 !important;
+}

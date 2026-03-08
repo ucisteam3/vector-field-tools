@@ -1,0 +1,870 @@
+"""
+Clip Exporter Module
+Handles clip downloading, encoding, and voiceover generation
+"""
+
+import os
+import subprocess
+import asyncio
+import sys
+import time
+import threading
+import tkinter as tk
+from tkinter import messagebox
+from pathlib import Path
+
+# Local temp directory for this app
+LOCAL_TEMP_DIR = Path("temp")
+
+try:
+    import edge_tts
+    EDGE_TTS_AVAILABLE = True
+except ImportError:
+    EDGE_TTS_AVAILABLE = False
+
+# Import subtitle generation if available
+try:
+    from modules.subtitle_engine import generate_karaoke_ass
+    SUBTITLE_ENGINE_AVAILABLE = True
+except ImportError:
+    SUBTITLE_ENGINE_AVAILABLE = False
+    print("[WARNING] Subtitle engine not available")
+
+# Import face tracking if available
+try:
+    from modules.face_tracker import FaceTracker
+    import cv2
+    import numpy as np
+    MEDIAPIPE_AVAILABLE = True
+except ImportError:
+    MEDIAPIPE_AVAILABLE = False
+
+class ClipExporter:
+    """Manages clip export operations including download, encoding, and voiceover"""
+    
+    def __init__(self, parent):
+        """
+        Initialize Clip Exporter
+        
+        Args:
+            parent: Reference to YouTubeHeatmapAnalyzer instance for accessing settings and video path
+        """
+        self.parent = parent
+    
+    async def _amake_voiceover(self, text, output_path):
+        """Internal async method for edge-tts"""
+        communicate = edge_tts.Communicate(text, "id-ID-GadisNeural") # Female Indonesian voice
+        await communicate.save(output_path)
+
+    def generate_voiceover(self, text, output_path):
+        """Generate voice over using edge-tts (Sync wrapper)"""
+        try:
+            asyncio.run(self.parent._amake_voiceover(text, output_path))
+            return True
+        except Exception as e:
+            print(f"  [ERROR] VoiceOver generation failed: {e}")
+            return False
+
+    def _download_worker(self, segments_to_download):
+        """Background worker for downloading clips"""
+        try:
+            clips_dir = Path("clips")
+            clips_dir.mkdir(exist_ok=True)
+            
+            total = len(segments_to_download)
+            for i, result in enumerate(segments_to_download):
+                self.parent.progress_var.set(f"Mengunduh klip {i+1}/{total}...")
+                # Update UI from main thread
+                self.parent.root.after(0, self.parent.root.update_idletasks)
+                self.parent.download_clip(result, clips_dir, i+1)
+            
+            self.parent.progress_var.set(f"Selesai! {total} klip disimpan di folder 'clips'.")
+            print(f"\n============================================================")
+            print(f"Analysis & Export Complete! {total} klip berhasil disimpan.")
+            print(f"============================================================\n")
+            self.parent.root.after(0, lambda: messagebox.showinfo("Berhasil", f"{total} klip berhasil diunduh!"))
+        except Exception as e:
+            self.parent.root.after(0, lambda: messagebox.showerror("Kesalahan", f"Thread pengunduhan gagal: {str(e)}"))
+        finally:
+            self.parent.root.after(0, lambda: self.parent.download_btn.config(state=tk.NORMAL))
+
+    def detect_leading_silence(self, video_path, start_time, check_duration=3.0):
+        """Detect silence at the beginning of the clip segment"""
+        # [INSTANT START] Analyze first 3 seconds for silence
+        try:
+            import subprocess
+            import re
+            
+            cmd = [
+                'ffmpeg', 
+                '-ss', str(start_time),
+                '-t', str(check_duration),
+                '-i', str(video_path),
+                '-af', 'silencedetect=noise=-30dB:d=0.1',
+                '-f', 'null', 
+                '-'
+            ]
+            
+            # Run FFmpeg (silencedetect writes to stderr)
+            result = subprocess.run(
+                cmd, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                creationflags=0x08000000 
+            )
+            
+            output = result.stderr
+            
+            # Check if silence starts at roughly 0
+            # [silencedetect @ ...] silence_start: 0.000000
+            # [silencedetect @ ...] silence_end: 1.230000
+            
+            s_start = re.search(r'silence_start:\s*([0-9\.]+)', output)
+            s_end = re.search(r'silence_end:\s*([0-9\.]+)', output)
+            
+            if s_start and s_end:
+                start_val = float(s_start.group(1))
+                end_val = float(s_end.group(1))
+                
+                # If silence starts at the beginning (allow 0.1s tolerance)
+                if start_val < 0.1:
+                    trim_amount = end_val
+                    # Cap trim amount (don't trim more than 2s to be safe)
+                    trim_amount = min(trim_amount, 2.0)
+                    
+                    if trim_amount > 0.1:
+                        print(f"  [INSTANT START] Detect Silence: {trim_amount:.2f}s (Adjusting Start Time)")
+                        return trim_amount
+            
+            return 0.0
+            
+        except Exception as e:
+            print(f"  [SILENCE DETECT ERROR] {e}")
+            return 0.0
+
+    def download_clip(self, result, output_dir=None, clip_num=None):
+        """Download a single clip using ffmpeg with high quality re-encoding"""
+        if not self.parent.video_path:
+            messagebox.showerror("Error", "Video belum diunduh!")
+            return False
+
+        # [INSTANT START] Check for leading silence
+        # Only if audio is enabled? Assumed yes.
+        silence_offset = self.detect_leading_silence(self.parent.video_path, result['start'])
+        if silence_offset > 0:
+            print(f"  [INSTANT START] Skipping first {silence_offset:.2f}s of silence")
+            result['start'] += silence_offset
+            # Note: We do NOT shift end time. This naturally shortens the clip slightly,
+            # which is fine as we are removing dead air.
+
+        if output_dir is None:
+            output_dir = Path("clips")
+            output_dir.mkdir(exist_ok=True)
+        else:
+            output_dir = Path(output_dir)
+        
+        # Generate safe filename from topic
+        safe_topic = "".join(c for c in result['topic'][:50] if c.isalnum() or c in (' ', '-', '_')).strip()
+        if not safe_topic:
+            safe_topic = f"clip_{clip_num or 'selected'}"
+        
+        # Format output filename (Remove timestamps as requested)
+        output_filename = f"{safe_topic}.mp4"
+        output_path = output_dir / output_filename
+        
+        # Calculate duration
+        duration = result['end'] - result['start']
+        
+        try:
+            # Use ffmpeg to extract clip
+            import subprocess
+            
+            # Check if ffmpeg is available
+            try:
+                subprocess.run(['ffmpeg', '-version'], 
+                             capture_output=True, check=True, creationflags=0x08000000)
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                messagebox.showerror(
+                    "Kesalahan", 
+                    "FFmpeg tidak ditemukan. Silakan instal FFmpeg dan tambahkan ke PATH.\n"
+                    "Jalankan install_ffmpeg.bat untuk instruksi."
+                )
+                return False
+            
+            # Voice Over Hook Logic
+            voiceover_path = None
+            if EDGE_TTS_AVAILABLE and self.parent.use_voiceover_var.get() and result.get('hook_script'):
+                print(f"  [AI VOX] Generating hook: {result['hook_script']}")
+                temp_vox = Path(LOCAL_TEMP_DIR) / f"vox_{int(time.time())}.mp3"
+                if self.parent.generate_voiceover(result['hook_script'], str(temp_vox)):
+                    voiceover_path = temp_vox
+
+            # --- SUBTITLE GENERATION (Word-Level Karaoke) ---
+            ass_path = None
+            print(f"  [DEBUG] Subtitle Enabled Checkbox: {self.parent.subtitle_enabled_var.get()}")
+            if self.parent.subtitle_enabled_var.get():
+                try:
+                    # 1. Prepare Settings for this Clip (Copy global)
+                    clip_settings = self.parent.custom_settings.copy()
+                    clip_settings['clip_start_time'] = result['start']
+                    
+                    # Search for Source VTT file (if mode is youtube_cc)
+                    # Pattern: video_name.id.vtt or video_name.vtt or video_name.en.vtt
+                    # Search for Source VTT file (if mode is youtube_cc OR auto)
+                    # Pattern: video_name.id.vtt or video_name.vtt or video_name.en.vtt
+                    current_mode = clip_settings.get("whisper_model", "auto")
+                    
+                    if current_mode == "youtube_cc" or current_mode == "auto":
+                        vid_path = Path(self.parent.video_path)
+                        base_stem = vid_path.stem # video
+                        parent = vid_path.parent
+                        
+                        # Try common patterns
+                        found_vtt = None
+                        for ext in [".id.vtt", ".vtt", ".en.vtt", ".id.srv1", ".id.vtt", ".en.srv1"]:
+                             # Also try simpler stem (sometimes yt-dlp adds id to filename but not vtt, or vice versa)
+                             # Strategy: check direct concatenation
+                             candidate = parent / f"{base_stem}{ext}"
+                             if candidate.exists():
+                                 found_vtt = str(candidate)
+                                 break
+                        
+                        if found_vtt:
+                            print(f"  [SUBTITLE] Found Youtube CC (Auto): {found_vtt}")
+                            clip_settings['video_vtt_path'] = found_vtt
+                            # Force mode to use CC logic downstream
+                            clip_settings['whisper_model'] = "youtube_cc" 
+                        else:
+                            if current_mode == "auto":
+                                print(f"  [SUBTITLE] Auto Mode: No CC found. Fallback to AI (Small).")
+                                clip_settings['whisper_model'] = "small"
+                            else:
+                                print(f"  [SUBTITLE] WARN: Mode 'youtube_cc' active but NO .vtt file found! Will skip or fallback?")
+                                clip_settings['whisper_model'] = "small"
+                    
+                    # 1. Extract audio from original video for this specific segment
+                    temp_audio_cut = Path(LOCAL_TEMP_DIR) / f"sub_audio_{int(time.time())}.wav"
+                    # FFmpeg extract audio segment
+                    sub_cmd = [
+                        'ffmpeg', '-y', '-ss', str(result['start']), '-t', str(duration),
+                        '-i', str(self.parent.video_path), '-ac', '1', '-ar', '16000', str(temp_audio_cut)
+                    ]
+                    subprocess.run(sub_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000)
+                    
+                    if temp_audio_cut.exists():
+                        # 2. Generate ASS
+                        temp_ass = Path(LOCAL_TEMP_DIR) / f"karaoke_{int(time.time())}.ass"
+                        if generate_karaoke_ass(temp_audio_cut, temp_ass, clip_settings):
+                            ass_path = temp_ass
+                            # [DEBUG] Check if ASS is valid and has content
+                            if temp_ass.exists():
+                                sz = temp_ass.stat().st_size
+                                print(f"  [DEBUG] ASS Generated success: {temp_ass} (Size: {sz} bytes)")
+                                # Check if it has events
+                                with open(temp_ass, 'r', encoding='utf-8') as f:
+                                    content = f.read()
+                                    if "[Events]" in content and "Dialogue:" in content:
+                                        print(f"  [DEBUG] ASS has valid [Events] and Dialogue lines.")
+                                    else:
+                                        print(f"  [DEBUG] WARNING: ASS file exists but seems to have NO dialogue!")
+                            else:
+                                print(f"  [DEBUG] generate_karaoke_ass returned True but file MISSING?")
+                        else:
+                            print(f"  [DEBUG] generate_karaoke_ass returned False")
+                        
+                        try: temp_audio_cut.unlink()
+                        except: pass
+                except Exception as e:
+                    print(f"  [SUBTITLE ERROR] {e}")
+
+            # Prepare base FFmpeg filters and inputs
+            # Check if BGM is enabled and file exists
+            bgm_enabled = self.parent.custom_settings.get("bgm_enabled", False)
+            bgm_file_path = self.parent.custom_settings.get("bgm_file_path", "")
+            has_bgm = bgm_enabled and bgm_file_path and os.path.exists(bgm_file_path)
+            
+            if has_bgm:
+                print(f"  [BGM] File: {os.path.basename(bgm_file_path)}")
+                print(f"  [BGM] Volume: -10dB (0.316x)")
+                print(f"  [BGM] Mode: Auto-Loop (menyesuaikan durasi clip)")
+            
+            if voiceover_path:
+                # Filter: Pad VOX or amix with ducking? 
+                # Let's use amix with volume adjustment: VOX at 1.5, BG at 0.4
+                if has_bgm:
+                    # Complex: Original Audio + Voiceover + BGM
+                    # BGM at -10dB = volume=0.316 (10^(-10/20) ≈ 0.316)
+                    # Original at 1.0 (KEEP FULL VOLUME), VOX at 1.5, BGM at 0.316
+                    audio_filter = (
+                        "[1:a]volume=1.5[vox];"
+                        "[0:a]volume=1.0[bg];"
+                        "[2:a]volume=0.316,aloop=loop=-1:size=2e+09[bgm];"  # Loop BGM, -10dB
+                        "[bg][vox]amix=inputs=2:duration=first[mix1];"
+                        "[mix1][bgm]amix=inputs=2:duration=first:dropout_transition=2"
+                    )
+                    input_args = ['-i', str(self.parent.video_path), '-i', str(voiceover_path), '-i', bgm_file_path]
+                else:
+                    # Original at 1.0 (KEEP FULL VOLUME), VOX at 1.5
+                    audio_filter = "[1:a]volume=1.5[vox];[0:a]volume=1.0[bg];[bg][vox]amix=inputs=2:duration=first:dropout_transition=2"
+                    input_args = ['-i', str(self.parent.video_path), '-i', str(voiceover_path)]
+            else:
+                if has_bgm:
+                    # Only BGM + Original Audio
+                    # BGM at -10dB = volume=0.316
+                    audio_filter = (
+                        "[0:a]volume=1.0[orig];"
+                        "[1:a]volume=0.316,aloop=loop=-1:size=2e+09[bgm];"  # Loop BGM, -10dB
+                        "[orig][bgm]amix=inputs=2:duration=first:dropout_transition=2"
+                    )
+                    input_args = ['-i', str(self.parent.video_path), '-i', bgm_file_path]
+                else:
+                    audio_filter = "anull" # Passthrough
+                    input_args = ['-i', str(self.parent.video_path)]
+
+
+            # Construct Filter Complex
+            # Check export mode: landscape_fit (blur) vs face_tracking (crop)
+            export_mode = self.parent.custom_settings.get("export_mode", "landscape_fit")
+            print(f"  [EXPORT MODE] Using mode: {export_mode}")
+            
+            if export_mode == "face_tracking" and MEDIAPIPE_AVAILABLE:
+                print("  [FACE TRACKING] Analyzing clip segment for face positions...")
+                try:
+                    # Initialize face tracker
+                    smoothing = self.parent.custom_settings.get("face_tracking_smoothing", 30)
+                    tracker = FaceTracker(smoothing_window=smoothing)
+                    
+                    # Get clip timing
+                    start_time = result['start']
+                    duration = result['end'] - result['start']
+                    
+                    print(f"  [FACE TRACKING] Clip: {start_time:.1f}s - {result['end']:.1f}s (duration: {duration:.1f}s)")
+                    
+                    # Analyze ONLY the clip segment (not full video!)
+                    crop_positions = tracker.analyze_video_for_faces(
+                        str(self.parent.video_path), 
+                        sample_rate=30,
+                        start_time=start_time,
+                        duration=duration
+                    )
+                    tracker.close()
+                    
+                    # Get crop box for first frame (we'll use average position for simplicity)
+                    # For dynamic crop, we'd need to generate per-frame crop which is complex with FFmpeg
+                    # Instead, we'll use the median position across all frames for a stable crop
+                    if crop_positions:
+                        median_x = int(np.median(crop_positions))
+                        
+                        # Get video dimensions
+                        cap = cv2.VideoCapture(str(self.parent.video_path))
+                        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                        cap.release()
+                        
+                        # Calculate 9:16 crop box
+                        crop_height = frame_height
+                        crop_width = int(crop_height * 9 / 16)
+                        
+                        if crop_width > frame_width:
+                            crop_width = frame_width
+                            crop_height = int(crop_width * 16 / 9)
+                        
+                        crop_x = median_x - crop_width // 2
+                        crop_x = max(0, min(crop_x, frame_width - crop_width))
+                        crop_y = (frame_height - crop_height) // 2
+                        
+                        print(f"  [FACE TRACKING] Crop: {crop_width}x{crop_height} at ({crop_x}, {crop_y})")
+                        
+                        # Apply crop and scale to 1080x1920
+                        fc_str = (
+                            f"[0:v]setsar=1,crop={crop_width}:{crop_height}:{crop_x}:{crop_y},scale=1080:1920[v_mixed];"
+                        )
+                    else:
+                        # No faces detected - fallback to center crop
+                        print("  [FACE TRACKING] No faces detected - using center crop")
+                        fc_str = (
+                            f"[0:v]setsar=1,crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920[v_mixed];"
+                        )
+                except Exception as e:
+                    print(f"  [FACE TRACKING ERROR] {e} - falling back to center crop")
+                    fc_str = (
+                        f"[0:v]setsar=1,crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920[v_mixed];"
+                    )
+            else:
+                # Landscape Fit mode (original blur background)
+                if export_mode == "face_tracking" and not MEDIAPIPE_AVAILABLE:
+                    print("  [WARNING] Face tracking requires MediaPipe - using landscape fit mode")
+                
+                fc_str = (
+                    f"[0:v]setsar=1,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:10[bg_v];"
+                    f"[0:v]setsar=1,scale=1080:-1[fg_v];"
+                    f"[bg_v][fg_v]overlay=(W-w)/2:(H-h)/2[v_mixed];"
+                )
+            
+            # --- DYNAMIC ZOOM (Ken Burns style) ---
+            zoom_enabled = self.parent.custom_settings.get("dynamic_zoom_enabled", False)
+            if zoom_enabled:
+                zoom_strength = float(self.parent.custom_settings.get("dynamic_zoom_strength", 1.55))
+                zoom_speed = float(self.parent.custom_settings.get("dynamic_zoom_speed", 0.0032))
+                zoom_strength = max(1.1, min(2.0, zoom_strength))
+                zoom_speed = max(0.0015, min(0.008, zoom_speed))  # lebih cepat biar terasa
+                print(f"  [DYNAMIC ZOOM] strength={zoom_strength}, speed={zoom_speed}")
+                fc_str += f"[v_mixed]zoompan=z='min(zoom+{zoom_speed:.4f},{zoom_strength:.2f})':d=1:s=1080x1920[v_mixed];"
+            
+            # --- VIDEO FLIP LOGIC (Anti-Copyright) ---
+            # Apply flip BEFORE text overlays so text remains readable
+            flip_enabled = self.parent.custom_settings.get("video_flip_enabled", False)
+            if flip_enabled:
+                print(f"  [FLIP] Horizontal flip enabled (anti-copyright)")
+                fc_str += f"[v_mixed]hflip[v_flipped];"
+                last_v_label = "[v_flipped]"
+            else:
+                last_v_label = "[v_mixed]"
+            
+            # --- SUBTITLE OVERLAY ---
+            # Applied AFTER flip so subtitle text remains readable
+            if ass_path:
+                safe_ass_path = str(ass_path).replace("\\", "/").replace(":", "\\:")
+                # [FIX] Point FFmpeg to local fonts directory
+                fonts_dir = str(Path("assets/fonts").resolve()).replace("\\", "/").replace(":", "\\:")
+                fc_str += f"{last_v_label}subtitles='{safe_ass_path}':fontsdir='{fonts_dir}'[v_sub];"
+                last_v_label = "[v_sub]"
+            
+            # --- WATERMARK LOGIC ---
+            if self.parent.custom_settings.get("watermark_enabled"):
+                try:
+                    wm_type = self.parent.custom_settings.get("watermark_type", "text")
+                    wm_pos_x_pct = self.parent.custom_settings.get("watermark_pos_x", 50)
+                    wm_pos_y_margin = self.parent.custom_settings.get("watermark_pos_y", 50)
+                    
+                    # Position Logic
+                    # X: Percentage (centered anchor) -> (W * pct/100) - (w/2)
+                    # Y: Bottom Margin (px) -> H - h - margin
+                    
+                    if wm_type == "text":
+                        wm_text = self.parent.custom_settings.get("watermark_text", "Watermark")
+                        if wm_text:
+                            # [FIX] Scale watermark size for 1080p (Slider is 8-96, Output needs to match Subtitle scale)
+                            # Applying 10x multiplier to match subtitle_engine logic
+                            wm_base_size = self.parent.custom_settings.get("watermark_size", 48)
+                            wm_size = int(wm_base_size * 10)
+                            wm_font_name = self.parent.custom_settings.get("watermark_font", "Arial")
+                            # Map Font Name to File
+                            from modules.font_manager import VIRAL_FONTS
+                            font_path = None
+                            
+                            # 1. Try Viral Fonts (Assets)
+                            if wm_font_name in VIRAL_FONTS:
+                                local_font = f"assets/fonts/{VIRAL_FONTS[wm_font_name][1]}"
+                                if os.path.exists(local_font):
+                                    font_path = local_font
+                            
+                            # 2. Try Direct Filename match
+                            if not font_path:
+                                candidate = f"assets/fonts/{wm_font_name}.ttf"
+                                if os.path.exists(candidate):
+                                    font_path = candidate
+                            
+                            # 3. Fallback to Safe Asset Font (Roboto-Bold)
+                            if not font_path:
+                                fallback = "assets/fonts/Roboto-Bold.ttf"
+                                if os.path.exists(fallback):
+                                    font_path = fallback
+                                else:
+                                    # Absolute panic fallback
+                                    try:
+                                        import glob
+                                        found = glob.glob("assets/fonts/*.ttf")
+                                        if found: font_path = found[0]
+                                    except: pass
+                            
+                            if font_path:
+                                font_abs = os.path.abspath(font_path).replace("\\", "/").replace(":", "\\:").replace("'", "")
+                            else:
+                                font_abs = "arial.ttf" # Should not happen if assets exist
+                            
+                            wm_col = self.parent.custom_settings.get("watermark_color", "#FFFFFF").replace("#", "0x")
+                            wm_op = self.parent.custom_settings.get("watermark_opacity", 80) / 100.0
+                            wm_out_w = self.parent.custom_settings.get("watermark_outline_width", 2)
+                            wm_out_col = self.parent.custom_settings.get("watermark_outline_color", "#000000").replace("#", "0x")
+                            
+                            safe_wm_text = wm_text.replace(":", "\\:").replace("'", "")
+                            
+                            # Text Position Expr:
+                            # x = (W*pct/100) - (text_w/2)
+                            # y = H - text_h - margin
+                            x_expr = f"(W*{wm_pos_x_pct}/100)-(text_w/2)"
+                            y_expr = f"H-text_h-{wm_pos_y_margin}"
+                            
+                            fc_str += f"{last_v_label}drawtext=text='{safe_wm_text}':fontfile='{font_abs}':fontsize={wm_size}:fontcolor={wm_col}@{wm_op}:borderw={wm_out_w}:bordercolor={wm_out_col}@{wm_op}:x={x_expr}:y={y_expr}[v_wm];"
+                            last_v_label = "[v_wm]"
+
+                    elif wm_type == "image":
+                        wm_path = self.parent.custom_settings.get("watermark_image_path")
+                        if wm_path and os.path.exists(wm_path):
+                            # Add input
+                            input_args.extend(['-i', wm_path])
+                            wm_idx = (len(input_args) // 2) - 1
+                            
+                            scale_pct = self.parent.custom_settings.get("watermark_image_scale", 50) / 100.0
+                            wm_op = self.parent.custom_settings.get("watermark_image_opacity", 100) / 100.0
+                            
+                            # Complex filter for Image: scale, opacity, overlay
+                            # We need to process the watermark image first
+                            
+                            # 1. Scale & Opacity
+                            wm_proc = f"[wm_proc_{wm_idx}]"
+                            fc_str += f"[{wm_idx}:v]format=rgba,scale=iw*{scale_pct}:-1,colorchannelmixer=aa={wm_op}{wm_proc};"
+                            
+                            # 2. Overlay
+                            # x = (W*pct/100) - (w/2)
+                            # y = H - h - margin
+                            x_expr = f"(W*{wm_pos_x_pct}/100)-(w/2)"
+                            y_expr = f"H-h-{wm_pos_y_margin}"
+                            
+                            fc_str += f"{last_v_label}{wm_proc}overlay=x='{x_expr}':y='{y_expr}'[v_wm];"
+                            last_v_label = "[v_wm]"
+                            
+                except Exception as e:
+                    print(f"[EXPORT ERROR] Watermark failed: {e}")
+
+            # --- OVERLAY LOGIC (Second Watermark) ---
+            if self.parent.custom_settings.get("overlay_enabled"):
+                try:
+                    ov_type = self.parent.custom_settings.get("overlay_type", "text")
+                    ov_pos_x_pct = self.parent.custom_settings.get("overlay_pos_x", 50)
+                    ov_pos_y_margin = self.parent.custom_settings.get("overlay_pos_y", 200)
+                    
+                    if ov_type == "text":
+                        ov_text = self.parent.custom_settings.get("overlay_text", "Overlay")
+                        if ov_text:
+                            # Scale overlay size for 1080p
+                            ov_base_size = self.parent.custom_settings.get("overlay_size", 48)
+                            ov_size = int(ov_base_size * 10)
+                            ov_font_name = self.parent.custom_settings.get("overlay_font", "Arial")
+                            
+                            # Map Font Name to File
+                            from modules.font_manager import VIRAL_FONTS
+                            font_path = None
+                            
+                            # 1. Try Viral Fonts (Assets)
+                            if ov_font_name in VIRAL_FONTS:
+                                local_font = f"assets/fonts/{VIRAL_FONTS[ov_font_name][1]}"
+                                if os.path.exists(local_font):
+                                    font_path = local_font
+                            
+                            # 2. Try Direct Filename match
+                            if not font_path:
+                                candidate = f"assets/fonts/{ov_font_name}.ttf"
+                                if os.path.exists(candidate):
+                                    font_path = candidate
+                            
+                            # 3. Fallback to Safe Asset Font
+                            if not font_path:
+                                fallback = "assets/fonts/Roboto-Bold.ttf"
+                                if os.path.exists(fallback):
+                                    font_path = fallback
+                                else:
+                                    try:
+                                        import glob
+                                        found = glob.glob("assets/fonts/*.ttf")
+                                        if found: font_path = found[0]
+                                    except: pass
+                            
+                            if font_path:
+                                font_abs = os.path.abspath(font_path).replace("\\", "/").replace(":", "\\:").replace("'", "")
+                            else:
+                                font_abs = "arial.ttf"
+                            
+                            ov_col = self.parent.custom_settings.get("overlay_color", "#FFFFFF").replace("#", "0x")
+                            ov_op = self.parent.custom_settings.get("overlay_opacity", 80) / 100.0
+                            ov_out_w = self.parent.custom_settings.get("overlay_outline_width", 2)
+                            ov_out_col = self.parent.custom_settings.get("overlay_outline_color", "#000000").replace("#", "0x")
+                            
+                            safe_ov_text = ov_text.replace(":", "\\:").replace("'", "")
+                            
+                            # Position expressions
+                            x_expr = f"(W*{ov_pos_x_pct}/100)-(text_w/2)"
+                            y_expr = f"H-text_h-{ov_pos_y_margin}"
+                            
+                            fc_str += f"{last_v_label}drawtext=text='{safe_ov_text}':fontfile='{font_abs}':fontsize={ov_size}:fontcolor={ov_col}@{ov_op}:borderw={ov_out_w}:bordercolor={ov_out_col}@{ov_op}:x={x_expr}:y={y_expr}[v_ov];"
+                            last_v_label = "[v_ov]"
+
+                    elif ov_type == "image":
+                        ov_path = self.parent.custom_settings.get("overlay_image_path")
+                        if ov_path and os.path.exists(ov_path):
+                            # Add input
+                            input_args.extend(['-i', ov_path])
+                            ov_idx = (len(input_args) // 2) - 1
+                            
+                            scale_pct = self.parent.custom_settings.get("overlay_image_scale", 50) / 100.0
+                            ov_op = self.parent.custom_settings.get("overlay_image_opacity", 100) / 100.0
+                            
+                            # Process overlay image
+                            ov_proc = f"[ov_proc_{ov_idx}]"
+                            fc_str += f"[{ov_idx}:v]format=rgba,scale=iw*{scale_pct}:-1,colorchannelmixer=aa={ov_op}{ov_proc};"
+                            
+                            # Overlay position
+                            x_expr = f"(W*{ov_pos_x_pct}/100)-(w/2)"
+                            y_expr = f"H-h-{ov_pos_y_margin}"
+                            
+                            fc_str += f"{last_v_label}{ov_proc}overlay=x='{x_expr}':y='{y_expr}'[v_ov];"
+                            last_v_label = "[v_ov]"
+                            
+                except Exception as e:
+                    print(f"[EXPORT ERROR] Overlay failed: {e}")
+
+            # --- SOURCE CREDIT LOGIC ---
+            if self.parent.custom_settings.get("source_credit_enabled"):
+                try:
+                    # Prioritas utama: pakai metadata channel asli yang sudah diambil di main.py
+                    channel_name = getattr(self.parent, "channel_name", None)
+                    if not channel_name or channel_name == "Unknown Channel":
+                        # Fallback 1: coba ambil dari label UI jika ada
+                        try:
+                            ui_channel = self.parent.channel_name_label.cget("text")
+                            if ui_channel and ui_channel != "-":
+                                channel_name = ui_channel
+                        except Exception:
+                            pass
+
+                    if not channel_name or channel_name == "Unknown Channel":
+                        # Fallback 2: heuristik dari nama file (hanya jika ada pola " - ")
+                        if self.parent.video_path:
+                            video_path = Path(self.parent.video_path)
+                            video_stem = video_path.stem  # filename without extension
+                            
+                            # Common patterns: "ChannelName - Video Title [ID].mp4"
+                            # Hanya gunakan jika ada separator " - " untuk menghindari menggunakan judul video
+                            if ' - ' in video_stem:
+                                channel_name = video_stem.split(' - ')[0]
+                                # Remove video ID if present (pattern: [xxxxx] at end)
+                                channel_name = channel_name.split('[')[0].strip()
+
+                    # Jika tetap gagal, gunakan placeholder yang aman
+                    if not channel_name:
+                        channel_name = "Unknown Channel"
+                    
+                    # Create credit text (hanya nama channel, bukan judul video)
+                    credit_text = f"Source: {channel_name}"
+                    
+                    print(f"  [SOURCE CREDIT] Adding: {credit_text}")
+                    
+                    # Font settings
+                    credit_font_name = self.parent.custom_settings.get("source_credit_font", "Arial")
+                    credit_size = int(self.parent.custom_settings.get("source_credit_fontsize", 17) * 10)  # Scale for 1080p (match watermark/overlay)
+                    
+                    # Map Font Name to File
+                    from modules.font_manager import VIRAL_FONTS
+                    font_path = None
+                    
+                    # 1. Try Viral Fonts (Assets)
+                    if credit_font_name in VIRAL_FONTS:
+                        local_font = f"assets/fonts/{VIRAL_FONTS[credit_font_name][1]}"
+                        if os.path.exists(local_font):
+                            font_path = local_font
+                    
+                    # 2. Try Direct Filename match
+                    if not font_path:
+                        candidate = f"assets/fonts/{credit_font_name}.ttf"
+                        if os.path.exists(candidate):
+                            font_path = candidate
+                    
+                    # 3. Fallback to Safe Asset Font
+                    if not font_path:
+                        fallback = "assets/fonts/Roboto-Bold.ttf"
+                        if os.path.exists(fallback):
+                            font_path = fallback
+                        else:
+                            try:
+                                import glob
+                                found = glob.glob("assets/fonts/*.ttf")
+                                if found: font_path = found[0]
+                            except: pass
+                    
+                    if font_path:
+                        font_abs = os.path.abspath(font_path).replace("\\", "/").replace(":", "\\:").replace("'", "")
+                    else:
+                        font_abs = "arial.ttf"
+                    
+                    # Color and opacity
+                    credit_col = self.parent.custom_settings.get("source_credit_color", "#FFFFFF").replace("#", "0x")
+                    credit_op = self.parent.custom_settings.get("source_credit_opacity", 80) / 100.0
+                    
+                    # Position preset
+                    position = self.parent.custom_settings.get("source_credit_position", "bottom-right")
+                    offset_x = self.parent.custom_settings.get("source_credit_pos_x", 50)
+                    offset_y = self.parent.custom_settings.get("source_credit_pos_y", 100)
+                    
+                    # Calculate position based on preset
+                    if position == "top-left":
+                        x_expr = f"{offset_x}"
+                        y_expr = f"{offset_y}"
+                    elif position == "top-right":
+                        x_expr = f"W-text_w-{offset_x}"
+                        y_expr = f"{offset_y}"
+                    elif position == "bottom-left":
+                        x_expr = f"{offset_x}"
+                        y_expr = f"H-text_h-{offset_y}"
+                    else:  # bottom-right (default)
+                        x_expr = f"W-text_w-{offset_x}"
+                        y_expr = f"H-text_h-{offset_y}"
+                    
+                    # Escape text
+                    safe_credit_text = credit_text.replace(":", "\\:").replace("'", "")
+                    
+                    # Add drawtext filter
+                    fc_str += f"{last_v_label}drawtext=text='{safe_credit_text}':fontfile='{font_abs}':fontsize={credit_size}:fontcolor={credit_col}@{credit_op}:x={x_expr}:y={y_expr}[v_credit];"
+                    last_v_label = "[v_credit]"
+                    
+                except Exception as e:
+                    print(f"  [SOURCE CREDIT ERROR] {e}")
+
+            # Map final video
+            fc_str += f"{last_v_label}null[v_out];"
+            
+            # --- AUDIO PITCH (optional) ---
+            pitch_enabled = self.parent.custom_settings.get("audio_pitch_enabled", False)
+            pitch_semitones = float(self.parent.custom_settings.get("audio_pitch_semitones", 0))
+            pitch_semitones = max(-4, min(4, pitch_semitones))
+            if pitch_enabled and pitch_semitones != 0:
+                rate_in = 48000 * (2 ** (pitch_semitones / 12.0))
+                print(f"  [AUDIO PITCH] {pitch_semitones:+.1f} semitones -> asetrate={rate_in:.0f},aresample=48000")
+                fc_str += f"{audio_filter}[a_pitch_in];[a_pitch_in]asetrate={rate_in:.0f},aresample=48000[a_out]"
+            else:
+                fc_str += f"{audio_filter}[a_out]"
+                
+            filter_complex = fc_str
+            
+            # Encoder configuration based on GPU toggle
+            use_gpu = self.parent.gpu_var.get()
+            
+            def get_ffmpeg_cmd(encoder="cpu"):
+                # Apply Audio Padding (Competitor Rule: 0.2s buffer)
+                # Adjust start/duration but ensure we don't go out of bounds (0 check)
+                pad_start = max(0, result['start'] - 0.2) 
+                pad_end = result['start'] + duration + 0.2
+                pad_duration = pad_end - pad_start
+
+                base_cmd = [
+                    'ffmpeg', '-y',
+                    '-ss', str(pad_start),
+                    '-t', str(pad_duration)
+                ]
+                
+                # Add inputs
+                base_cmd.extend(input_args)
+                
+                # Add filter and mapping
+                base_cmd.extend([
+                    '-filter_complex', filter_complex,
+                    '-map', '[v_out]', '-map', '[a_out]'
+                ])
+
+                if encoder == "gpu":
+                    # NVENC (NVIDIA) settings with quality control
+                    base_cmd.extend([
+                        '-c:v', 'h264_nvenc',
+                        '-preset', 'p4',           # Fast preset
+                        '-cq', '23',               # Quality (18-28, lower=better)
+                        '-b:v', '8M',              # Max video bitrate 8 Mbps
+                        '-maxrate', '10M',         # Peak bitrate
+                        '-bufsize', '16M',         # Buffer size
+                        '-c:a', 'aac',
+                        '-b:a', '192k',            # Audio bitrate
+                        '-ar', '48000',            # Audio sample rate
+                        str(output_path)
+                    ])
+                else:
+                    # CPU (libx264) settings with quality control
+                    base_cmd.extend([
+                        '-c:v', 'libx264',
+                        '-preset', 'medium',       # Balanced preset
+                        '-crf', '23',              # Quality (18-28, lower=better)
+                        '-maxrate', '8M',          # Max bitrate 8 Mbps
+                        '-ar', '48000',            # Audio sample rate
+                        str(output_path)
+                    ])
+                return base_cmd
+
+            # Execution logic with real-time feedback
+            def run_ffmpeg_realtime(cmd, description):
+                print(f"  [{description}] Executing FFmpeg...")
+                import sys # Import sys for platform check
+                try:
+                    # Use Popen to capture output in real-time
+                    if sys.platform == 'win32':
+                        startupinfo = subprocess.STARTUPINFO()
+                        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                        process = subprocess.Popen(
+                            cmd, 
+                            stdout=subprocess.PIPE, 
+                            stderr=subprocess.STDOUT, 
+                            universal_newlines=True,
+                            encoding='utf-8', 
+                            errors='replace',
+                            startupinfo=startupinfo,
+                            creationflags=0x08000000 
+                        )
+                    else:
+                        process = subprocess.Popen(
+                            cmd, 
+                            stdout=subprocess.PIPE, 
+                            stderr=subprocess.STDOUT, 
+                            universal_newlines=True,
+                            encoding='utf-8',
+                            errors='replace'
+                        )
+                    
+                    # Read output line by line
+                    for line in process.stdout:
+                        line = line.strip()
+                        if line:
+                            # Filter interesting lines to avoid spam
+                            if any(k in line for k in ["frame=", "time=", "size=", "speed="]):
+                                print(f"    [FFMPEG] {line}", end='\r')
+                            elif "Error" in line or "error" in line:
+                                print(f"    [FFMPEG ERROR] {line}")
+                    
+                    process.wait()
+                    print("") # Newline after \r
+                    return process.returncode
+                    
+                except Exception as e:
+                    print(f"  [EXEC ERROR] Failed to run ffmpeg: {e}")
+                    return -1
+
+            if use_gpu:
+                print(f"  [GPU] Mencoba ekspor dengan NVENC...")
+                cmd = get_ffmpeg_cmd("gpu")
+                ret_code = run_ffmpeg_realtime(cmd, "GPU-NVENC")
+                
+                if ret_code == 0:
+                    print(f"  [SUCCESS] Klip {clip_num or ''} berhasil diekspor (GPU)")
+                    if clip_num is None:
+                        messagebox.showinfo("Berhasil", f"Klip berhasil diekspor (GPU):\n{output_filename}")
+                    return True
+                else:
+                    print(f"  [GPU] Gagal ({ret_code}), kembali ke CPU...")
+
+            # CPU Fallback or Default
+            print(f"  [CPU] Mengekspor dengan libx264...")
+            cmd = get_ffmpeg_cmd("cpu")
+            ret_code = run_ffmpeg_realtime(cmd, "CPU-x264")
+            
+            if ret_code == 0:
+                print(f"  [SUCCESS] Klip {clip_num or ''} berhasil diekspor (CPU)")
+                if clip_num is None:
+                    messagebox.showinfo("Berhasil", f"Klip berhasil diekspor (CPU):\n{output_filename}")
+                return True
+            else:
+                print(f"  [ERROR] Ekspor gagal total.")
+                if clip_num is None:
+                    messagebox.showerror("Kesalahan", f"Gagal mengekspor klip. Cek log konsol.")
+                return False
+                    
+        except Exception as e:
+            if clip_num is None:
+                messagebox.showerror("Kesalahan", f"Gagal mengekspor klip: {str(e)}")
+

@@ -1,0 +1,21 @@
+fastapi>=0.109.0
+uvicorn>=0.27.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+yt-dlp>=2023.10.0
+pydub>=0.25.1
+SpeechRecognition>=3.10.0
+matplotlib>=3.7.0
+google-genai>=1.0.0
+groq
+Pillow
+edge-tts
+# pyaudio is optional - only needed for microphone input
+# If installation fails, you can skip it as the app works with audio files
+# pyaudio>=0.2.11
+
+# [Optional] ML models for improved viral clip detection (embedding + emotion)
+# pip install sentence-transformers transformers torch
+# sentence-transformers>=2.2.0
+# transformers>=4.30.0
+# torch>=2.0.0
