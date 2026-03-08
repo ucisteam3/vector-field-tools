@@ -828,7 +828,7 @@ class AISegmentAnalyzer:
 
             target_clips = max(15, min(30, int(duration_sec / 3600 * self.TARGET_CLIPS_PER_HOUR)))
             openai_segments = openai_segments[:max(target_clips, 40)]
-            print(f"  [MOMENT] Candidates: {len(deduped)} → final pool: {len(openai_segments)}")
+            print(f"  [MOMENT] Candidates: {len(deduped)} -> final pool: {len(openai_segments)}")
 
         # [FALLBACK] No sub_transcriptions: use GPT
         if not openai_segments and getattr(self.parent, "openai_available", False):
@@ -1228,7 +1228,7 @@ class AISegmentAnalyzer:
         checked_segments = []
         for item_id in self.parent.results_tree.get_children():
             values = self.parent.results_tree.item(item_id)['values']
-            if values and values[0] == '☑':
+            if values and values[0] == '[X]':
                 for result in self.parent.analysis_results:
                     if (f"{int(result['start']//60):02d}:{int(result['start']%60):02d}" == values[1] and
                         f"{int(result['end']//60):02d}:{int(result['end']%60):02d}" == values[2]):

@@ -562,7 +562,7 @@ def refine_all_segments(segments: List[Dict], vtt_path: str,
     
     if stats['refined_count'] > 0:
         stats['avg_adjustment'] = total_adjustment / stats['refined_count']
-        print(f"  [SMART SEGMENT] ✓ Berhasil menyesuaikan {stats['refined_count']} dari {stats['total_segments']} klip")
+        print(f"  [SMART SEGMENT] OK Berhasil menyesuaikan {stats['refined_count']} dari {stats['total_segments']} klip")
         print(f"  [SMART SEGMENT] Rata-rata penyesuaian: {stats['avg_adjustment']:.1f} detik")
     
     return refined_segments, stats

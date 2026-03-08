@@ -87,7 +87,7 @@ class ResultsManager:
                 score_val = result.get('viral_score', result.get('virality_score', 0))
             score_str = str(int(score_val)) if isinstance(score_val, (int, float)) else '0'
             self.parent.results_tree.insert("", tk.END, values=(
-                "☐",
+                "[ ]",
                 start_str,
                 end_str,
                 duration_str,
@@ -108,7 +108,7 @@ class ResultsManager:
                 if not items: return
                 
                 first_val = self.parent.results_tree.item(items[0])['values'][0]
-                new_val = "☐" if first_val == "☑" else "☑"
+                new_val = "[ ]" if first_val == "[X]" else "[X]"
                 
                 for item in items:
                     vals = list(self.parent.results_tree.item(item)['values'])
@@ -121,7 +121,7 @@ class ResultsManager:
             
             if column == "#1":  # Select column
                 vals = list(self.parent.results_tree.item(item)['values'])
-                vals[0] = "☑" if vals[0] == "☐" else "☐"
+                vals[0] = "[X]" if vals[0] == "[ ]" else "[ ]"
                 self.parent.results_tree.item(item, values=vals)
 
 
@@ -129,7 +129,7 @@ class ResultsManager:
         """Check all items in the treeview"""
         for item in self.parent.results_tree.get_children():
             vals = list(self.parent.results_tree.item(item)['values'])
-            vals[0] = "☑"
+            vals[0] = "[X]"
             self.parent.results_tree.item(item, values=vals)
 
 
@@ -137,7 +137,7 @@ class ResultsManager:
         """Uncheck all items in the treeview"""
         for item in self.parent.results_tree.get_children():
             vals = list(self.parent.results_tree.item(item)['values'])
-            vals[0] = "☐"
+            vals[0] = "[ ]"
             self.parent.results_tree.item(item, values=vals)
 
     
@@ -239,7 +239,7 @@ class ResultsManager:
         checked_segments = []
         for item_id in self.parent.results_tree.get_children():
             item = self.parent.results_tree.item(item_id)
-            if item['values'][0] == "☑":
+            if item['values'][0] == "[X]":
                 start_str = item['values'][1]
                 for result in self.parent.analysis_results:
                     if self.parent.format_time(result['start']) == start_str:

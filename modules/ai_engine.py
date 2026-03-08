@@ -56,24 +56,24 @@ def _title_from_transcript(segment_text):
 # [TITLE GENERATION] Viral Title Examples by Category
 VIRAL_TITLE_EXAMPLES = {
     "informatif": [
-        "🔥 Cara Cepat Kaya dari Nol Tanpa Modal",
-        "💡 Rahasia Bumbu Nasi Goreng Abang-Abang",
-        "🎯 Tips Lolos Interview Kerja 100% Berhasil"
+        "Cara Cepat Kaya dari Nol Tanpa Modal",
+        "Rahasia Bumbu Nasi Goreng Abang-Abang",
+        "Tips Lolos Interview Kerja 100% Berhasil"
     ],
     "lucu": [
-        "😂 Momen Kocak Pas Kepedesan Level 10",
-        "😂 Reaksi Kocak Kalah 10x Beruntun di Game",
-        "😂 Kucing Pinter Banget Buka Pintu Sendiri"
+        "Momen Kocak Pas Kepedesan Level 10",
+        "Reaksi Kocak Kalah 10x Beruntun di Game",
+        "Kucing Pinter Banget Buka Pintu Sendiri"
     ],
     "kontroversial": [
-        "😱 Hot Take Kontroversial Soal Sistem Pendidikan",
-        "😱 Statement Berani Tentang Politik Hari Ini",
-        "😱 Fakta Mengejutkan di Balik Layar Industri"
+        "Hot Take Kontroversial Soal Sistem Pendidikan",
+        "Statement Berani Tentang Politik Hari Ini",
+        "Fakta Mengejutkan di Balik Layar Industri"
     ],
     "emosional": [
-        "😭 Kisah Haru Pertemuan Setelah 10 Tahun",
-        "😭 Detik-detik Kecelakaan yang Bikin Nangis",
-        "😭 Momen Paling Emosional Tahun Ini"
+        "Kisah Haru Pertemuan Setelah 10 Tahun",
+        "Detik-detik Kecelakaan yang Bikin Nangis",
+        "Momen Paling Emosional Tahun Ini"
     ]
 }
 
@@ -246,7 +246,7 @@ Transkrip: "{text}"
 
 Tugas:
 Buat 1 Judul MENARIK tapi NATURAL (Jangan pakai kata 'Gila' atau 'Parah').
-Gunakan formula: [Variasi Hook] + [Emoji] -> Contoh: "Ternyata... Begini Caranya 😱"
+Gunakan formula: [Variasi Hook] + [Emosi] -> Contoh: "Ternyata... Begini Caranya"
 
 Tugas Tambahan:
 Buat 1 kalimat "HOOK" sangat pendek (max 10 kata) untuk diucapkan AI di awal video agar penonton penasaran.
@@ -469,9 +469,9 @@ AVOID (Do NOT select these):
 * Segments that only introduce what will be discussed
 
 HIGHLIGHT SIGNALS (prefer segments containing or starting with):
-- "tapi", "namun", "ternyata", "justru" → often introduces the real moment
+- "tapi", "namun", "ternyata", "justru" -> often introduces the real moment
 - "masalahnya", "keputusan wasit", "gol", "kontroversi", "aneh", "tidak masuk akal"
-- "yang menarik" → usually precedes the actual interesting point
+- "yang menarik" -> usually precedes the actual interesting point
 
 INTRO PHRASES (avoid as clip start—these are discussion setup):
 - "jadi", "seperti biasa", "kita akan bahas", "sekarang kita bahas"

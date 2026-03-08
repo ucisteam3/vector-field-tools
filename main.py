@@ -1,3 +1,14 @@
+import sys
+
+# Ensure UTF-8 output on Windows to prevent encoding crashes
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        if sys.stderr is not sys.stdout and hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8")
+    except (OSError, AttributeError):
+        pass
+
 import tkinter as tk
 print("[DEBUG] main.py started execution...")
 from tkinter import ttk, scrolledtext, messagebox, filedialog
