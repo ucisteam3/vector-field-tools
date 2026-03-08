@@ -856,14 +856,18 @@ class ClipExporter:
                     pad_end = result['start'] + duration + 0.2
                     pad_duration = pad_end - pad_start
 
+                # [A/V SYNC FIX] -ss and -t MUST come AFTER -i for accurate sync.
+                # -ss before -i = keyframe seek only, causes audio ahead of video.
+                # -ss after -i = frame-accurate, both streams seek together.
+                first_input = input_args[:2]  # -i and path
+                rest_inputs = input_args[2:] if len(input_args) > 2 else []
                 base_cmd = [
                     'ffmpeg', '-y',
+                    *first_input,
                     '-ss', str(pad_start),
-                    '-t', str(pad_duration)
+                    '-t', str(pad_duration),
+                    *rest_inputs
                 ]
-                
-                # Add inputs
-                base_cmd.extend(input_args)
                 
                 # Add filter and mapping
                 base_cmd.extend([
