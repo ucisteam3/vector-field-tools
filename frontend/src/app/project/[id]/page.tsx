@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Play, Download, Loader2, Sparkles } from "lucide-react";
-import { getProject, getProjectStatus, clipUrl, type Project } from "@/lib/api";
+import { getProject, getProjectStatus, clipUrl, playClipUrl, type Project } from "@/lib/api";
 import AppSidebar from "@/components/AppSidebar";
 
 export default function ProjectPage() {
@@ -57,7 +57,8 @@ export default function ProjectPage() {
     setPlayingClip(index);
     if (blobCache[index]) return;
     try {
-      const url = clipUrl(id, clip.clip_path.replace("clips/", ""));
+      const filename = clip.clip_path.replace("clips/", "");
+      const url = playClipUrl(id, filename);
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to load");
       const blob = await res.blob();
