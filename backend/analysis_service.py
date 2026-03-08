@@ -4,6 +4,7 @@ Headless workflow: Download -> Transcribe -> AI Segments -> Match -> Titles -> S
 """
 
 import os
+import re
 import json
 import shutil
 import threading
@@ -205,25 +206,20 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None):
             heatmap_segments = []
             should_run_title_gen = True
 
-            if manual_text and ("|" in manual_text or "-" in manual_text):
+            # Prefer Opus-style multi-clip AI segmentation when we have transcript (10-30 clips).
+            # Only use parse_structured_segments for explicit chapter-style input (e.g. "01:45-03:30 | Title").
+            has_chapter_format = manual_text and "|" in manual_text and re.search(r"\d{1,2}:\d{2}\s*-\s*\d", manual_text)
+            if has_chapter_format:
                 guessed = ctx.parse_structured_segments(manual_text)
-                if guessed:
-                    ctx.analysis_results = guessed
+                if guessed and len(guessed) > 1:
+                    ctx.analysis_results = ctx.match_segments_with_content(
+                        [{"start": g["start"], "end": g["end"], "avg_activity": 0.99} for g in guessed.values()],
+                        guessed,
+                    )
                     should_run_title_gen = False
                 else:
-                    ai_segments = ctx.get_viral_segments_from_ai(manual_text, keyword=None)
-                    if ai_segments:
-                        transcriptions = ai_segments
-                        should_run_title_gen = False
-                        for _, t in ai_segments.items():
-                            heatmap_segments.append({"start": t["start"], "end": t["end"], "avg_activity": 0.99})
-                    else:
-                        transcriptions = ctx.parse_manual_transcript(manual_text)
-                        for _, t in transcriptions.items():
-                            heatmap_segments.append({"start": t["start"], "end": t["end"], "avg_activity": 0.95})
-                    if not ctx.analysis_results:
-                        ctx.analysis_results = ctx.match_segments_with_content(heatmap_segments, transcriptions)
-            else:
+                    has_chapter_format = False
+            if not has_chapter_format:
                 if not manual_text:
                     prog("Transcribing with AI...")
                     audio_path = ctx.download_youtube_audio(youtube_url)
@@ -243,16 +239,13 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None):
                     ai_engine = AIEngine(ctx)
                     ctx.openai_available = getattr(ai_engine, "openai_available", False)
 
-                    if ctx.openai_available:
-                        prog("Detecting viral moments...")
-                        ai_segments = ctx.get_viral_segments_from_ai(transcriptions, keyword=None)
-                        if ai_segments:
-                            transcriptions = ai_segments
-                            should_run_title_gen = False
-                            for _, t in ai_segments.items():
-                                heatmap_segments.append({"start": t["start"], "end": t["end"], "avg_activity": 0.99})
-                        else:
-                            heatmap_segments = ctx.analyze_video_heatmap(str(video_dest))
+                    prog("Detecting viral moments...")
+                    ai_segments = ctx.get_viral_segments_from_ai(transcriptions, keyword=None)
+                    if ai_segments:
+                        transcriptions = ai_segments
+                        should_run_title_gen = False
+                        for _, t in ai_segments.items():
+                            heatmap_segments.append({"start": t["start"], "end": t["end"], "avg_activity": 0.99})
                     else:
                         heatmap_segments = ctx.analyze_video_heatmap(str(video_dest))
                 else:

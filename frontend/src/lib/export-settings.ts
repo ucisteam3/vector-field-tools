@@ -36,7 +36,7 @@ export type ExportSettings = {
 };
 
 export const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
-  export_mode: "landscape_fit",
+  export_mode: "face_tracking",
   dynamic_zoom_enabled: false,
   video_flip_enabled: false,
   audio_pitch_enabled: false,
@@ -69,6 +69,6 @@ export const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
 };
 
 export const EXPORT_MODE_OPTIONS: { value: ExportMode; label: string }[] = [
-  { value: "landscape_fit", label: "Landscape Fit (Blur Background)" },
-  { value: "face_tracking", label: "Face Tracking (9:16 Crop)" },
+  { value: "face_tracking", label: "9:16 Portrait (Shorts/Reels)" },
+  { value: "landscape_fit", label: "Landscape (Blur Background)" },
 ];

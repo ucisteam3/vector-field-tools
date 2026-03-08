@@ -179,14 +179,14 @@ export default function ProjectPage() {
       <main className="flex-1 ml-64 p-6 flex flex-col min-h-0">
         <div className="flex gap-4 flex-1 min-h-0 overflow-x-auto overflow-y-hidden min-w-0">
           <div className="flex-1 flex flex-col min-w-0 relative">
-            <div className="rounded-xl bg-black overflow-hidden aspect-video">
+            <div className="rounded-xl bg-black overflow-hidden aspect-[9/16] max-w-md mx-auto">
               {isAnalyzing ? (
                 <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-zinc-400">
                   <Loader2 className="w-16 h-16 animate-spin text-cyan-400" />
                   <p>{status?.progress || "Analyzing..."}</p>
                 </div>
               ) : project.video_path ? (
-                <video ref={videoRef} src={videoUrl(id)} controls className="w-full h-full" />
+                <video ref={videoRef} src={videoUrl(id)} controls className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-zinc-500">No video</div>
               )}
