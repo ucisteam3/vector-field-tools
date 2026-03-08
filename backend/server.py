@@ -8,7 +8,41 @@ import os
 import sys
 from pathlib import Path
 
-# Ensure UTF-8 output on Windows to prevent encoding crashes
+# Windows encoding fix: wrap stdout/stderr to replace problematic Unicode before write
+# Catches AI responses, tracebacks, and any print() with arrows/emoji
+_REPLACE = (
+    ("\u2192", "->"),
+    ("\u27a1", "->"),
+    ("\u2713", "OK"),
+    ("\u2714", "OK"),
+    ("\u2717", "X"),
+    ("\u26a0", "!"),
+)
+
+
+def _safe_encode(s: str) -> str:
+    for old, new in _REPLACE:
+        s = s.replace(old, new)
+    return s
+
+
+class _SafeStream:
+    def __init__(self, stream):
+        self._stream = stream
+
+    def write(self, s):
+        if isinstance(s, str):
+            s = _safe_encode(s)
+        self._stream.write(s)
+
+    def flush(self):
+        self._stream.flush()
+
+    def __getattr__(self, k):
+        return getattr(self._stream, k)
+
+
+# Apply UTF-8 reconfigure first, then wrap to catch any remaining bad chars
 if hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -16,6 +50,14 @@ if hasattr(sys.stdout, "reconfigure"):
             sys.stderr.reconfigure(encoding="utf-8")
     except (OSError, AttributeError):
         pass
+
+# Wrap streams so ANY output with \u2192 etc gets sanitized (fallback for cp1252)
+try:
+    sys.stdout = _SafeStream(sys.stdout)
+    if sys.stderr is not sys.stdout:
+        sys.stderr = _SafeStream(sys.stderr)
+except Exception:
+    pass
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
