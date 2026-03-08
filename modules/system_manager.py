@@ -108,13 +108,13 @@ class SystemManager:
             # Determine PC tier
             if self.parent.ram_gb >= 32 and self.parent.has_nvidia:
                 self.parent.pc_tier = "sultan"
-                self.parent.pc_level = "🔥 Sultan (Dewa)"
+                self.parent.pc_level = "Sultan (Dewa)"
             elif self.parent.ram_gb >= 16:
                 self.parent.pc_tier = "mantap"
-                self.parent.pc_level = "💪 Mantap (Bagus)"
+                self.parent.pc_level = "Mantap (Bagus)"
             else:
                 self.parent.pc_tier = "kentang"
-                self.parent.pc_level = "🥔 Kentang (Standar)"
+                self.parent.pc_level = "Kentang (Standar)"
             
             print(f"  [SYSTEM] Specs: {self.parent.ram_gb}GB RAM, {self.parent.cpu_cores} Cores, NVIDIA: {self.parent.has_nvidia}")
             print(f"  [TIER] PC Level: {self.parent.pc_level}")
@@ -125,4 +125,4 @@ class SystemManager:
             self.parent.cpu_cores = 4
             self.parent.has_nvidia = False
             self.parent.pc_tier = "kentang"
-            self.parent.pc_level = "🥔 Kentang (Standar)"
+            self.parent.pc_level = "Kentang (Standar)"

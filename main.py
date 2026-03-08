@@ -495,13 +495,13 @@ class YouTubeHeatmapAnalyzer:
                 
             # Categorize
             if self.ram_gb >= 16 and self.cpu_cores >= 8 and self.has_nvidia:
-                self.pc_level = "Sultan 👑"
+                self.pc_level = "Sultan"
                 self.advanced_ai_enabled.set(True)
             elif self.ram_gb >= 8 and self.has_nvidia:
-                self.pc_level = "Mantap ✅"
+                self.pc_level = "Mantap"
                 self.advanced_ai_enabled.set(True)
             else:
-                self.pc_level = "Kentang 🥔"
+                self.pc_level = "Kentang"
                 self.advanced_ai_enabled.set(False)
                 
             print(f"  [SYSTEM] Specs: {self.ram_gb}GB RAM, {self.cpu_cores} Cores, NVIDIA: {self.has_nvidia}")

@@ -60,7 +60,7 @@ class UISetup:
         self.parent.url_entry = ttk.Entry(input_row, style='Dark.TEntry')
         self.parent.url_entry.grid(row=0, column=0, sticky="ew", padx=(0, 10))
         
-        ModernButton(input_row, text="📂 Browse", 
+        ModernButton(input_row, text="Browse", 
                     command=self.parent.browse_local_file, width=100, radius=12,
                     bg_color="#444444", hover_color="#666666").grid(row=0, column=1, padx=5)
         
@@ -123,11 +123,11 @@ class UISetup:
         manual_btn_frame = ttk.Frame(manual_frame, style='Dark.TFrame')
         manual_btn_frame.pack(anchor=tk.E)
 
-        ModernButton(manual_btn_frame, text="📦 Export AI Package", width=180, radius=15,
+        ModernButton(manual_btn_frame, text="Export AI Package", width=180, radius=15,
                     bg_color="#7928ca", hover_color="#904ce0", fg_color="white",
                     command=self.parent.export_ai_package).pack(side=tk.LEFT, padx=5)
 
-        ModernButton(manual_btn_frame, text=" Hapus Transkrip", width=160, radius=15,
+        ModernButton(manual_btn_frame, text="Hapus Transkrip", width=160, radius=15,
                     bg_color="#cc0000", hover_color="#ff3333", fg_color="white",
                     command=lambda: self.parent.manual_transcript_text.delete("1.0", tk.END)).pack(side=tk.LEFT, padx=5)
 
@@ -240,7 +240,7 @@ class UISetup:
         columns = ("Select", "Start", "End", "Duration", "Hook", "Title", "Score")
         self.parent.results_tree = ttk.Treeview(left_frame, columns=columns, show="headings",
                                         style='Dark.Treeview', height=15)
-        self.parent.results_tree.heading("Select", text="☑")
+        self.parent.results_tree.heading("Select", text="[X]")
         self.parent.results_tree.heading("Start", text="MULAI")
         self.parent.results_tree.heading("End", text="SELESAI")
         self.parent.results_tree.heading("Duration", text="DURASI")
@@ -277,19 +277,19 @@ class UISetup:
         actions_frame = tk.Frame(left_frame, bg=self.parent.bg_dark)
         actions_frame.grid(row=3, column=0, columnspan=2, pady=(15, 0), sticky=tk.W)
         
-        self.parent.preview_btn = ModernButton(actions_frame, text="▶ Putar Video", 
+        self.parent.preview_btn = ModernButton(actions_frame, text="> Putar Video", 
                                       command=self.parent.preview_selected_segment, width=160, height=45)
         self.parent.preview_btn.pack(side=tk.LEFT, padx=(0, 15))
-        ModernButton(actions_frame, text="🖼 Thumbnail", width=120, height=45,
+        ModernButton(actions_frame, text="Thumbnail", width=120, height=45,
                     command=self.parent.save_thumbnail_for_segment,
                     bg_color=self.parent.bg_lighter, hover_color="#30363d", fg_color=self.parent.fg_light).pack(side=tk.LEFT, padx=(0, 15))
         
-        self.parent.download_selected_btn = ModernButton(actions_frame, text="📥 Download Terpilih", 
+        self.parent.download_selected_btn = ModernButton(actions_frame, text="Download Terpilih", 
                                                 command=self.parent.download_selected_clips, width=180, height=45,
                                                 bg_color=self.parent.accent_green, hover_color="#4fd160")
         self.parent.download_selected_btn.pack(side=tk.LEFT, padx=15)
         
-        self.parent.download_all_btn = ModernButton(actions_frame, text="📦 Download Semua", 
+        self.parent.download_all_btn = ModernButton(actions_frame, text="Download Semua", 
                                            command=self.parent.download_all_clips, width=180, height=45,
                                            bg_color="#7928ca", hover_color="#904ce0")
         self.parent.download_all_btn.pack(side=tk.LEFT, padx=15)
@@ -298,7 +298,7 @@ class UISetup:
             if not os.path.exists("clips"):
                 os.makedirs("clips", exist_ok=True)
             os.startfile("clips")
-        ModernButton(actions_frame, text="📁 Buka Folder", 
+        ModernButton(actions_frame, text="Buka Folder", 
                     command=open_clips_folder,
                     width=150, height=45, bg_color=self.parent.bg_lighter, hover_color="#30363d", fg_color=self.parent.fg_light).pack(side=tk.LEFT, padx=15)
 
@@ -363,8 +363,8 @@ class UISetup:
         
         ModernButton(gemini_btns, text="+ Tambah", command=self.parent.add_gemini_key, width=120, height=35, radius=10).pack(side=tk.LEFT, padx=(0, 10))
         ModernButton(gemini_btns, text="- Hapus Terpilih", command=self.parent.remove_gemini_key, width=130, height=35, radius=10, bg_color="#cc3300", hover_color="#ff4400").pack(side=tk.LEFT, padx=10)
-        ModernButton(gemini_btns, text="🗑 Hapus Semua", command=self.parent.clear_all_gemini_keys, width=130, height=35, radius=10, bg_color="#555555", hover_color="#777777").pack(side=tk.LEFT, padx=10)
-        ModernButton(gemini_btns, text="⚡ Test Semua Key", command=self.parent.test_all_gemini_keys, width=150, height=35, radius=10, bg_color="#ffcc00", hover_color="#ffd633", fg_color="black").pack(side=tk.LEFT, padx=10)
+        ModernButton(gemini_btns, text="Hapus Semua", command=self.parent.clear_all_gemini_keys, width=130, height=35, radius=10, bg_color="#555555", hover_color="#777777").pack(side=tk.LEFT, padx=10)
+        ModernButton(gemini_btns, text="Test Semua Key", command=self.parent.test_all_gemini_keys, width=150, height=35, radius=10, bg_color="#ffcc00", hover_color="#ffd633", fg_color="black").pack(side=tk.LEFT, padx=10)
         
         ttk.Checkbutton(gemini_tab, text="Otomatis Ganti Key (Rotate) jika Limit", style='Dark.TCheckbutton', variable=self.parent.rotate_gemini).pack(anchor=tk.W, pady=(10, 0))
         
@@ -491,7 +491,7 @@ class UISetup:
         # === ACCORDION SECTIONS ===
         
         # 1. Subtitle Accordion
-        subtitle_accordion = AccordionSection(cards_container, "📝 Karaoke Subtitle", accent_color=self.parent.accent_blue)
+        subtitle_accordion = AccordionSection(cards_container, "Karaoke Subtitle", accent_color=self.parent.accent_blue)
         subtitle_accordion.pack(fill='x', pady=(0, 2))
         subtitle_accordion.open()  # Open by default
         sub_card = subtitle_accordion.get_content_frame()
@@ -634,7 +634,7 @@ class UISetup:
         self.parent.root.after(100, self.parent.update_preview)
 
         # 2. Watermark Accordion
-        watermark_accordion = AccordionSection(cards_container, "🏷️ Watermark", accent_color=self.parent.accent_blue)
+        watermark_accordion = AccordionSection(cards_container, "Watermark", accent_color=self.parent.accent_blue)
         watermark_accordion.pack(fill='x', pady=(0, 2))
         wm_card = watermark_accordion.get_content_frame()
 
@@ -716,7 +716,7 @@ class UISetup:
             if f:
                 self.parent.watermark_image_path_var.set(f)
                 self.parent.update_preview()
-        ModernButton(img_up_frame, text="📂 Browse", command=browse_wm_image, width=80, bg_color=self.parent.accent_blue).pack(side=tk.LEFT)
+        ModernButton(img_up_frame, text="Browse", command=browse_wm_image, width=80, bg_color=self.parent.accent_blue).pack(side=tk.LEFT)
 
         # Scale & Opacity (Image)
         wm_img_scale_frame = ttk.Frame(self.parent.wm_image_frame, style='Dark.TFrame')
@@ -765,7 +765,7 @@ class UISetup:
         self.parent.toggle_watermark_ui()
 
         # 3. BGM Accordion
-        bgm_accordion = AccordionSection(cards_container, "🎵 Background Music", accent_color=self.parent.accent_blue)
+        bgm_accordion = AccordionSection(cards_container, "Background Music", accent_color=self.parent.accent_blue)
         bgm_accordion.pack(fill='x', pady=(0, 2))
         bgm_card = bgm_accordion.get_content_frame()
         
@@ -805,13 +805,13 @@ class UISetup:
                     width=100, bg_color=self.parent.accent_blue, hover_color="#2980b9").pack(side=tk.LEFT)
         
         # Info label
-        info_label = ttk.Label(bgm_card, text="💡 BGM akan di-mix dengan volume -10dB saat export", 
+        info_label = ttk.Label(bgm_card, text="BGM akan di-mix dengan volume -10dB saat export", 
                               style='Dark.TLabel', font=('Segoe UI', 8, 'italic'))
         info_label.pack(anchor=tk.W, pady=(5, 0))
         
         
         # 3.5. Overlay Accordion (Second Watermark)
-        overlay_accordion = AccordionSection(cards_container, "🎨 Overlay", accent_color=self.parent.accent_blue)
+        overlay_accordion = AccordionSection(cards_container, "Overlay", accent_color=self.parent.accent_blue)
         overlay_accordion.pack(fill='x', pady=(0, 2))
         ov_card = overlay_accordion.get_content_frame()
 
@@ -889,7 +889,7 @@ class UISetup:
             if f:
                 self.parent.overlay_image_path_var.set(f)
                 self.parent.update_preview()
-        ModernButton(img_up_frame_ov, text="📂 Browse", command=browse_ov_image, width=80, bg_color=self.parent.accent_blue).pack(side=tk.LEFT)
+        ModernButton(img_up_frame_ov, text="Browse", command=browse_ov_image, width=80, bg_color=self.parent.accent_blue).pack(side=tk.LEFT)
 
         # Scale & Opacity (Image)
         ov_img_scale_frame = ttk.Frame(self.parent.ov_image_frame, style='Dark.TFrame')
@@ -938,14 +938,14 @@ class UISetup:
 
         
         # 4. Source Credit Accordion
-        source_accordion = AccordionSection(cards_container, "📺 Source Credit", accent_color=self.parent.accent_blue)
+        source_accordion = AccordionSection(cards_container, "Source Credit", accent_color=self.parent.accent_blue)
         source_accordion.pack(fill='x', pady=(0, 2))
         source_card = source_accordion.get_content_frame()
         
         # Enable Source Credit Checkbox
         tk.Checkbutton(
             source_card, 
-            text="📺 Tampilkan Source Credit", 
+            text="Tampilkan Source Credit", 
             variable=self.parent.source_credit_enabled_var,
             command=self.parent.update_preview,  # Changed from save_custom_settings to update_preview
             bg='#2b2b2b',
@@ -960,7 +960,7 @@ class UISetup:
         # Info Label (Text will be auto-generated)
         info_frame = ttk.Frame(source_card, style='Dark.TFrame')
         info_frame.pack(fill='x', pady=(0, 10))
-        ttk.Label(info_frame, text="💡 Text akan otomatis: 'Source: [Nama Channel]'", 
+        ttk.Label(info_frame, text="Text akan otomatis: 'Source: [Nama Channel]'", 
                  style='Dark.TLabel', font=('Segoe UI', 9, 'italic')).pack(anchor=tk.W)
         
         # Font & Size
@@ -993,7 +993,7 @@ class UISetup:
                 self.parent.source_credit_color_var.set(color[1])
                 self.parent.update_preview()
         
-        ModernButton(color_frame, text="🎨 Pick Color", command=pick_source_color,
+        ModernButton(color_frame, text="Pick Color", command=pick_source_color,
                     width=100, bg_color=self.parent.accent_blue, hover_color="#2980b9").pack(side=tk.LEFT, padx=(5, 10))
         
         ttk.Label(color_frame, text="Opacity:", style='Dark.TLabel').pack(side=tk.LEFT, padx=(0, 5))
@@ -1031,13 +1031,13 @@ class UISetup:
                  style='Dark.TLabel', width=4).pack(side=tk.LEFT, padx=(5, 0))
         
         # Info label
-        source_info = ttk.Label(source_card, text="💡 Menampilkan credit channel asli di video export", 
+        source_info = ttk.Label(source_card, text="Menampilkan credit channel asli di video export", 
                                style='Dark.TLabel', font=('Segoe UI', 8, 'italic'))
         source_info.pack(anchor=tk.W, pady=(5, 0))
         
         
         # 5. Export Mode Accordion
-        export_accordion = AccordionSection(cards_container, "🎬 Mode Export", accent_color=self.parent.accent_blue)
+        export_accordion = AccordionSection(cards_container, "Mode Export", accent_color=self.parent.accent_blue)
         export_accordion.pack(fill='x', pady=(0, 2))
         export_card = export_accordion.get_content_frame()
         
@@ -1085,7 +1085,7 @@ class UISetup:
         flip_frame.pack(fill='x', pady=(10, 0))
         tk.Checkbutton(
             flip_frame, 
-            text="🔄 Flip Video Horizontal (Anti-Copyright Detection)", 
+            text="Flip Video Horizontal (Anti-Copyright Detection)", 
             variable=self.parent.video_flip_var,
             command=self.parent.save_custom_settings,
             bg='#2b2b2b', fg='white', selectcolor='#2b2b2b',
