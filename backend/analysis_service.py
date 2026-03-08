@@ -311,25 +311,9 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None):
                 title=_safe_str(ctx.video_title or "Unknown"),
                 video_path="video.mp4",
                 clips=clips,
-                status="analyzing",
+                status="ready",
                 error=None,
             )
-            num_clips = len(clips)
-            prog("Rendering clips...")
-
-            def render_progress(current: int, total: int):
-                _set_status(project_id, "analyzing", f"Rendering clips {current}/{total}...")
-
-            try:
-                from backend.clip_service import export_all_clips
-                meta = get_project(project_id)
-                settings = meta.get("export_settings")
-                export_all_clips(project_id, settings, on_progress=render_progress)
-            except Exception as pre_render_err:
-                import traceback
-                traceback.print_exc()
-                print(f"[ANALYSIS] Pre-render error (non-fatal): {pre_render_err}")
-            update_project(project_id, status="ready", error=None)
             _set_status(project_id, "ready", "Analysis complete!")
 
         except Exception as e:
