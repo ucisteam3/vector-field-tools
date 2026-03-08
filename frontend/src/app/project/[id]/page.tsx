@@ -16,6 +16,7 @@ export default function ProjectPage() {
   const [status, setStatus] = useState<{ status: string; progress?: string } | null>(null);
   const [playingClip, setPlayingClip] = useState<number | null>(null);
   const [blobCache, setBlobCache] = useState<Record<number, string>>({});
+  const [downloading, setDownloading] = useState<Set<number>>(new Set());
   const blobCacheRef = useRef<Record<number, string>>({});
   blobCacheRef.current = blobCache;
 
@@ -74,6 +75,7 @@ export default function ProjectPage() {
     e.stopPropagation();
     const clip = project?.clips?.[index];
     if (!clip?.clip_path) return;
+    setDownloading((s) => new Set(s).add(index));
     const filename = clip.clip_path.replace("clips/", "");
     try {
       const url = playClipUrl(id, filename);
@@ -88,6 +90,12 @@ export default function ProjectPage() {
       URL.revokeObjectURL(blobUrl);
     } catch (err) {
       console.error(err);
+    } finally {
+      setDownloading((s) => {
+        const n = new Set(s);
+        n.delete(index);
+        return n;
+      });
     }
   };
 
@@ -198,9 +206,10 @@ export default function ProjectPage() {
                           <button
                             type="button"
                             onClick={(e) => handleDownload(e, i)}
-                            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[10px]"
+                            disabled={downloading.has(i)}
+                            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[10px] disabled:opacity-50"
                           >
-                            <Download className="w-2.5 h-2.5" /> Download
+                            {downloading.has(i) ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Download className="w-2.5 h-2.5" />} Download
                           </button>
                         </>
                       ) : (
