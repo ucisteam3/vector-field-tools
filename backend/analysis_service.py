@@ -28,15 +28,34 @@ def _ensure_sys_path():
 _analysis_status = {}
 _analysis_lock = threading.Lock()
 
+# Unicode chars that cause Windows charmap errors - replace with ASCII
+_UNICODE_REPLACEMENTS = (
+    ("\u2192", "->"),   # rightwards arrow
+    ("\u2713", "OK"),   # check mark
+    ("\u2714", "OK"),   # heavy check
+    ("\u2717", "FAIL"), # cross
+    ("\u26a0", "WARNING"),  # warning
+    ("\u27a1", "->"),   # rightwards arrow (variant)
+)
+
+
+def _safe_str(s: str) -> str:
+    """Replace Unicode chars that cause Windows charmap errors."""
+    if not s or not isinstance(s, str):
+        return s
+    for old, new in _UNICODE_REPLACEMENTS:
+        s = s.replace(old, new)
+    return s
+
 
 def _set_status(project_id: str, status: str, progress: str = None, error: str = None):
     with _analysis_lock:
         s = _analysis_status.get(project_id, {})
         s["status"] = status
         if progress is not None:
-            s["progress"] = progress
+            s["progress"] = _safe_str(progress)
         if error is not None:
-            s["error"] = error
+            s["error"] = _safe_str(error)
         _analysis_status[project_id] = s
 
 
@@ -240,7 +259,7 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None):
             # Build clips list for metadata
             clips = []
             for i, r in enumerate(ctx.analysis_results):
-                title = (r.get("clickbait_title") or r.get("topic") or "Clip").strip()
+                title = _safe_str((r.get("clickbait_title") or r.get("topic") or "Clip").strip())
                 safe = "".join(c for c in title[:50] if c.isalnum() or c in (" ", "-", "_")).strip()
                 if not safe:
                     safe = f"clip_{i+1}"
@@ -254,7 +273,7 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None):
                 })
 
             update_project(project_id,
-                title=ctx.video_title,
+                title=_safe_str(ctx.video_title or "Unknown"),
                 video_path="video.mp4",
                 clips=clips,
                 status="ready",
@@ -265,8 +284,9 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None):
         except Exception as e:
             import traceback
             traceback.print_exc()
-            update_project(project_id, status="error", error=str(e))
-            _set_status(project_id, "error", error=str(e))
+            err_msg = _safe_str(str(e))
+            update_project(project_id, status="error", error=err_msg)
+            _set_status(project_id, "error", error=err_msg)
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()
