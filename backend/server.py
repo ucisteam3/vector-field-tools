@@ -159,6 +159,22 @@ def _sanitize_project(meta: dict) -> dict:
         return meta
 
 
+@app.get("/gpu_status")
+def gpu_status():
+    """Check CUDA/GPU availability for debugging."""
+    try:
+        import torch
+        cuda = torch.cuda.is_available()
+        out = {
+            "cuda_available": cuda,
+            "device_name": torch.cuda.get_device_name(0) if cuda and torch.cuda.device_count() else None,
+            "pytorch_version": torch.__version__,
+        }
+        return out
+    except ImportError:
+        return {"cuda_available": False, "device_name": None, "pytorch_version": None}
+
+
 @app.get("/projects")
 def projects_list():
     """List all projects."""
