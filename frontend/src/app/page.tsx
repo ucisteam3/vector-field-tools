@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Youtube, Plus, Film, Calendar, Loader2, ExternalLink, Trash2, ShieldCheck, Upload } from "lucide-react";
+import AppSidebar from "@/components/AppSidebar";
 import { analyzeVideo, getProjects, getProjectStatus, deleteProject, retryProject, videoUrl, uploadCookies, getCookiesStatus, type Project } from "@/lib/api";
 
 export default function HomePage() {
@@ -125,23 +126,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#0a0c10] text-white">
-      <aside className="w-64 border-r border-zinc-700 bg-[#0d1117] fixed left-0 top-0 bottom-0 flex flex-col z-10">
-        <div className="p-6">
-          <Link href="/" className="flex items-center gap-2 text-xl font-bold text-cyan-400">
-            <Film className="w-8 h-8" />
-            AI Clipper
-          </Link>
-        </div>
-        <nav className="flex-1 px-4">
-          <Link
-            href="/"
-            className="flex items-center gap-2 px-4 py-3 rounded-lg bg-cyan-500/20 text-cyan-400"
-          >
-            <Film className="w-5 h-5" />
-            Dashboard
-          </Link>
-        </nav>
-      </aside>
+      <AppSidebar />
 
       <main className="flex-1 ml-64 p-8 bg-[#0a0c10]">
         <motion.div
