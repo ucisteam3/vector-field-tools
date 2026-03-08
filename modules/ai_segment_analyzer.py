@@ -609,7 +609,7 @@ class AISegmentAnalyzer:
         """
         Convert raw transcript to TTS-ready hook (8-12 words, first sentence or first 10 words).
         - Remove timestamps [MM:SS], brackets, trim
-        - Split by . ? ! → use first sentence
+        - Split by . ? ! -> use first sentence
         - Strip leading intro phrases (e.g. "Nah sebelum kita bahas...")
         - If no punctuation: take first 10 words
         - Cap at HOOK_MAX_WORDS
@@ -629,7 +629,7 @@ class AISegmentAnalyzer:
         first = (sentences[0] or "").strip()
         if not first:
             first = t
-        # Strip leading intro/filler phrases to get the punch (e.g. "Nah sebelum kita bahas wasit kita bahas dulu gol Beckham..." → "gol Beckham...")
+        # Strip leading intro/filler phrases to get the punch (e.g. "Nah sebelum kita bahas wasit kita bahas dulu gol Beckham..." -> "gol Beckham...")
         first_lower = first.lower()
         lead_ins = ["nah ", "oke ", "jadi ", "karena ", "karena itu ", "lalu ", "terus ", "kita bahas dulu ", "wasit kita bahas ", "wasit kita bahas dulu "]
         for _ in range(8):  # Multiple passes to strip stacked intro phrases
@@ -742,7 +742,7 @@ class AISegmentAnalyzer:
 
     def get_viral_segments_from_ai(self, raw_transcript, keyword=None):
         """
-        [MOMENT-FIRST] Detect viral clips: transcript → hook moments → expand → score → rank.
+        [MOMENT-FIRST] Detect viral clips: transcript -> hook moments -> expand -> score -> rank.
         Produces 15–30 high-quality clips that start at the important statement.
         """
         if not raw_transcript:
