@@ -8,8 +8,9 @@ import os
 import sys
 from pathlib import Path
 
-# Windows encoding fix: wrap stdout/stderr to replace problematic Unicode before write
-# Catches AI responses, tracebacks, and any print() with arrows/emoji
+# Windows encoding fix: MUST run before any other output
+# 1. Force UTF-8 on stdout/stderr
+# 2. Wrap with SafeStream that replaces \u2192 etc AND catches any encode error
 _REPLACE = (
     ("\u2192", "->"),
     ("\u27a1", "->"),
@@ -33,7 +34,12 @@ class _SafeStream:
     def write(self, s):
         if isinstance(s, str):
             s = _safe_encode(s)
-        self._stream.write(s)
+            try:
+                self._stream.write(s)
+            except UnicodeEncodeError:
+                self._stream.write(s.encode("ascii", errors="replace").decode("ascii"))
+        else:
+            self._stream.write(s)
 
     def flush(self):
         self._stream.flush()
@@ -42,16 +48,14 @@ class _SafeStream:
         return getattr(self._stream, k)
 
 
-# Apply UTF-8 reconfigure first, then wrap to catch any remaining bad chars
 if hasattr(sys.stdout, "reconfigure"):
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         if sys.stderr is not sys.stdout and hasattr(sys.stderr, "reconfigure"):
-            sys.stderr.reconfigure(encoding="utf-8")
-    except (OSError, AttributeError):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (OSError, AttributeError, TypeError):
         pass
 
-# Wrap streams so ANY output with \u2192 etc gets sanitized (fallback for cp1252)
 try:
     sys.stdout = _SafeStream(sys.stdout)
     if sys.stderr is not sys.stdout:

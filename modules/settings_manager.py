@@ -106,7 +106,7 @@ def save_settings(settings):
     """Save settings dictionary to JSON file"""
     try:
         os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
-        with open(SETTINGS_FILE, "w") as f:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=4)
         # print("[SETTINGS] Saved successfully.") # Quiet 
         return True

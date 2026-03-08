@@ -136,7 +136,7 @@ def download_default_fonts():
                 
         # Create marker file if at least some fonts exist
         if success_count > 0:
-            with open(INSTALLED_MARKER, "w") as f:
+            with open(INSTALLED_MARKER, "w", encoding="utf-8") as f:
                 f.write(f"Installed on {time.ctime()}")
             print(f"[FONTS] Download complete. {success_count}/{total_count} fonts ready.")
         else:
