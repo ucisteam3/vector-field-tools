@@ -20,6 +20,8 @@ export default function HomePage() {
   const [statusCache, setStatusCache] = useState<Record<string, { progress?: string; eta_message?: string }>>({});
   const [cookiesStatus, setCookiesStatus] = useState<{ exists: boolean; size_kb: number } | null>(null);
   const [uploadingCookies, setUploadingCookies] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const loadProjects = useCallback(async () => {
     setLoadError(null);
@@ -171,12 +173,14 @@ export default function HomePage() {
               )}
             </button>
           </div>
-            <div className="flex items-center gap-3 text-sm">
+            <div className="flex items-center gap-3 text-sm" suppressHydrationWarning>
               <span className="flex items-center gap-2 text-zinc-500">
                 <ShieldCheck className="w-4 h-4" />
                 Cookies YouTube:
               </span>
-              {cookiesStatus?.exists ? (
+              {!mounted ? (
+                <span className="text-zinc-500">...</span>
+              ) : cookiesStatus?.exists ? (
                 <span className="text-cyan-400">OK {cookiesStatus.size_kb} KB aktif</span>
               ) : (
                 <label className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-dashed border-zinc-600 hover:border-cyan-500/50 cursor-pointer text-zinc-400 hover:text-cyan-400 transition-colors">
@@ -351,12 +355,4 @@ export default function HomePage() {
                       )}
                     </button>
                   </div>
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </section>
-      </main>
-    </div>
-  );
-}
+                </motio
