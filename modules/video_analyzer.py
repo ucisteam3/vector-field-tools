@@ -25,26 +25,42 @@ except ImportError:
 
 
 class VideoAnalyzer:
-    """Manages video analysis operations including heatmap detection and transcription"""
+    """Manages video analysis operations including heatmap detection and transcription.
+    Backend-safe: works with WebAppContext via safe guards on parent methods."""
     
     def __init__(self, parent):
         """
         Initialize Video Analyzer
         
         Args:
-            parent: Reference to YouTubeHeatmapAnalyzer instance for accessing settings
+            parent: Reference to YouTubeHeatmapAnalyzer or WebAppContext (can be None)
         """
         self.parent = parent
+
+    def safe_parent_call(self, method, *args, **kwargs):
+        """Safely call a parent method if it exists. Returns None if parent=None or method missing."""
+        if self.parent is None:
+            return None
+        if hasattr(self.parent, method):
+            return getattr(self.parent, method)(*args, **kwargs)
+        return None
     
     def detect_high_engagement_face(self, frame):
         """Advanced visual analysis using MediaPipe to detect laughter/excitement"""
-        if not MEDIAPIPE_AVAILABLE or not self.parent.advanced_ai_enabled.get():
+        if not MEDIAPIPE_AVAILABLE:
+            return 0
+        if not self.parent or not getattr(self.parent, "advanced_ai_enabled", None):
+            return 0
+        if not self.parent.advanced_ai_enabled.get():
             return 0
             
         try:
             # MediaPipe is heavy, so we don't run it every frame (handled in loop)
             # This is a simplified heuristic: look for wide mouth open + squinted eyes
-            results = self.parent.face_mesh.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            face_mesh = getattr(self.parent, "face_mesh", None)
+            if face_mesh is None:
+                return 0
+            results = face_mesh.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             
             if results.multi_face_landmarks:
                 # Basic engagement score based on facial landmarks
@@ -71,7 +87,7 @@ class VideoAnalyzer:
         # Optimize: sample every 1 second instead of 0.5 for faster processing
         sample_rate = max(1, int(fps))  # Sample every 1 second
         
-        if self.parent.advanced_ai_enabled.get() and MEDIAPIPE_AVAILABLE:
+        if self.parent and getattr(self.parent, "advanced_ai_enabled", None) and self.parent.advanced_ai_enabled.get() and MEDIAPIPE_AVAILABLE:
             mp_face_mesh = mp.solutions.face_mesh
             self.parent.face_mesh = mp_face_mesh.FaceMesh(
                 static_image_mode=False,
@@ -95,8 +111,9 @@ class VideoAnalyzer:
             
             # Calculate engagement boost from MediaPipe (Sultan/Mantap mode)
             engagement_boost = 0
-            if self.parent.advanced_ai_enabled.get() and MEDIAPIPE_AVAILABLE and frame_count % 3 == 0:
-                engagement_boost = self.parent.detect_high_engagement_face(frame)
+            if self.parent and getattr(self.parent, "advanced_ai_enabled", None) and self.parent.advanced_ai_enabled.get() and MEDIAPIPE_AVAILABLE and frame_count % 3 == 0:
+                if hasattr(self.parent, "detect_high_engagement_face"):
+                    engagement_boost = self.parent.detect_high_engagement_face(frame)
             
             # Calculate frame difference (activity level)
             if prev_frame is not None:
@@ -111,8 +128,10 @@ class VideoAnalyzer:
             frame_count += 1
             if frame_count % 10 == 0:
                 progress = min(99, (frame_count * sample_rate / total_frames) * 100)
-                self.parent.progress_var.set(f"Mencari Golden Moment... {progress:.1f}%")
-                self.parent.root.update()
+                if self.parent and hasattr(self.parent, "progress_var"):
+                    self.parent.progress_var.set(f"Mencari Golden Moment... {progress:.1f}%")
+                if self.parent and hasattr(self.parent, "root"):
+                    self.parent.root.update()
         
         cap.release()
         
@@ -294,7 +313,7 @@ class VideoAnalyzer:
             
             # Try to find subtitle file
             subtitle_path = None
-            if hasattr(self, 'current_video_path') and self.parent.current_video_path:
+            if self.parent and hasattr(self.parent, 'current_video_path') and self.parent.current_video_path:
                 base_path = os.path.splitext(self.parent.current_video_path)[0]
                 potential_subs = [
                     base_path + ".id.vtt",
@@ -331,20 +350,28 @@ class VideoAnalyzer:
 
     def extract_audio_and_transcribe(self, video_path):
         """Transcribe audio using parallel processing (Whisper / Google Speech)."""
+        if not self.parent or not hasattr(self.parent, "_run_parallel_transcription"):
+            return {}
         transcriptions = self.parent._run_parallel_transcription(video_path)
         if not transcriptions or (len(transcriptions) < 2 and WHISPER_AVAILABLE):
             print("  [TRANSCRIPTION] Menggunakan Local Whisper (Akurasi Tinggi)...")
-            text = self.parent.transcribe_video_with_whisper(video_path)
+            text = None
+            if hasattr(self.parent, "transcribe_video_with_whisper"):
+                text = self.parent.transcribe_video_with_whisper(video_path)
             if text:
                 return {0: {'start': 0, 'end': 0, 'text': text}}
         return transcriptions
 
     def transcribe_audio_file(self, audio_path):
         """Transcribe audio using parallel processing."""
+        if not self.parent or not hasattr(self.parent, "_run_parallel_transcription"):
+            return {}
         return self.parent._run_parallel_transcription(audio_path)
 
     def _run_parallel_transcription(self, input_path, use_groq=False):
         if not os.path.exists(input_path):
+            return {}
+        if not self.parent or not hasattr(self.parent, "get_video_duration"):
             return {}
 
         transcriptions = {}

@@ -211,6 +211,22 @@ class WebAppContext:
     def find_sidecar_caption(self, video_path, video_id=None):
         return self.subtitle_parser.find_sidecar_caption(video_path, video_id)
 
+    def _parse_json3(self, data):
+        """Delegate to subtitle_parser for JSON3 parsing (used by download_manager)."""
+        return self.subtitle_parser._parse_json3(data)
+
+    def _fix_sub_overlaps(self, subs):
+        """Delegate to subtitle_parser for overlap fixing."""
+        return self.subtitle_parser._fix_sub_overlaps(subs)
+
+    def _write_srt_from_data(self, data, out_path, max_words=8):
+        """Delegate to subtitle_parser for SRT writing."""
+        return self.subtitle_parser._write_srt_from_data(data, out_path, max_words)
+
+    def _write_srt_from_segments(self, segments, out_path):
+        """Delegate to subtitle_parser for SRT writing from segments."""
+        return self.subtitle_parser._write_srt_from_segments(segments, out_path)
+
     def parse_vtt(self, path):
         return self.subtitle_parser.parse_vtt(path)
 
@@ -231,6 +247,15 @@ class WebAppContext:
 
     def transcribe_video_with_whisper(self, video_path):
         return self.transcription_engine.transcribe_video_with_whisper(video_path)
+
+    def get_video_duration(self, video_path):
+        return self.video_analyzer.get_video_duration(video_path)
+
+    def _run_parallel_transcription(self, input_path, use_groq=False):
+        return self.video_analyzer._run_parallel_transcription(input_path, use_groq)
+
+    def detect_high_engagement_face(self, frame):
+        return self.video_analyzer.detect_high_engagement_face(frame)
 
     def analyze_video_heatmap(self, video_path):
         return self.video_analyzer.analyze_video_heatmap(video_path)
