@@ -5,12 +5,21 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Play, Download, Loader2, Sparkles } from "lucide-react";
-import { getProject, getProjectStatus, playClipUrl, type Project } from "@/lib/api";
+import {
+  getProject,
+  getProjectStatus,
+  playClipUrl,
+  fetchPreviewAsBlobUrl,
+  exportClipWithSettings,
+  type Project,
+} from "@/lib/api";
+import { useAppSettings } from "@/lib/settings-store";
 import AppSidebar from "@/components/AppSidebar";
 
 export default function ProjectPage() {
   const params = useParams();
   const id = params?.id as string;
+  const [exportSettings] = useAppSettings();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<{ status: string; progress?: string } | null>(null);
@@ -74,10 +83,12 @@ export default function ProjectPage() {
     e.preventDefault();
     e.stopPropagation();
     const clip = project?.clips?.[index];
-    if (!clip?.clip_path) return;
+    if (!clip) return;
     setDownloading((s) => new Set(s).add(index));
-    const filename = clip.clip_path.replace("clips/", "");
     try {
+      const { clip_path } = await exportClipWithSettings(id, index, exportSettings);
+      const filename = (clip_path || "").replace("clips/", "");
+      if (!filename) throw new Error("Export failed");
       const url = playClipUrl(id, filename);
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to load");
@@ -88,6 +99,7 @@ export default function ProjectPage() {
       a.download = (clip.title || `clip_${index + 1}`).replace(/[^a-zA-Z0-9 _-]/g, "").trim().slice(0, 50) + ".mp4";
       a.click();
       URL.revokeObjectURL(blobUrl);
+      loadProject();
     } catch (err) {
       console.error(err);
     } finally {
@@ -164,25 +176,17 @@ export default function ProjectPage() {
                       </div>
                     ) : (
                       <>
-                        {clip.clip_path ? (
-                          <div className="w-full h-full bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center">
-                            <Play className="w-10 h-10 text-white/30" />
+                        <div className="w-full h-full bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center">
+                          <Play className="w-10 h-10 text-white/30" />
+                        </div>
+                        <div
+                          className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                          onClick={() => playClip(i)}
+                        >
+                          <div className="w-14 h-14 rounded-full bg-cyan-500/80 flex items-center justify-center">
+                            <Play className="w-7 h-7 text-white ml-1" fill="currentColor" />
                           </div>
-                        ) : (
-                          <div className="absolute inset-0 flex items-center justify-center bg-zinc-800">
-                            <span className="text-xs text-zinc-500">Rendering...</span>
-                          </div>
-                        )}
-                        {clip.clip_path && (
-                          <div
-                            className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                            onClick={() => playClip(i)}
-                          >
-                            <div className="w-14 h-14 rounded-full bg-cyan-500/80 flex items-center justify-center">
-                              <Play className="w-7 h-7 text-white ml-1" fill="currentColor" />
-                            </div>
-                          </div>
-                        )}
+                        </div>
                         <div className="absolute bottom-0.5 right-0.5 px-1 py-0.5 rounded bg-black/70 text-[10px] text-white">
                           {formatTime(clip.duration)}
                         </div>
@@ -195,26 +199,20 @@ export default function ProjectPage() {
                   <div className="p-1.5">
                     <h3 className="text-[11px] font-medium line-clamp-2 mb-1 text-zinc-200">{clip.title}</h3>
                     <div className="flex flex-wrap gap-0.5">
-                      {clip.clip_path ? (
-                        <>
-                          <button
-                            onClick={() => playClip(i)}
-                            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 text-[10px]"
-                          >
-                            <Play className="w-2.5 h-2.5" /> Play
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => handleDownload(e, i)}
-                            disabled={downloading.has(i)}
-                            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[10px] disabled:opacity-50"
-                          >
-                            {downloading.has(i) ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Download className="w-2.5 h-2.5" />} Download
-                          </button>
-                        </>
-                      ) : (
-                        <span className="text-[10px] text-zinc-500">Preparing...</span>
-                      )}
+                      <button
+                        onClick={() => playClip(i)}
+                        className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 text-[10px]"
+                      >
+                        <Play className="w-2.5 h-2.5" /> Play
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleDownload(e, i)}
+                        disabled={downloading.has(i)}
+                        className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[10px] disabled:opacity-50"
+                      >
+                        {downloading.has(i) ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Download className="w-2.5 h-2.5" />} Export
+                      </button>
                     </div>
                   </div>
                 </motion.div>

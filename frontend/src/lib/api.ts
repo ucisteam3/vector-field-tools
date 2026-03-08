@@ -175,6 +175,23 @@ export function extractClipUrl(projectId: string, clipIndex: number): string {
   return `${API}/clip/${projectId}/extract/${clipIndex}`;
 }
 
+/** Preview: 9:16 center crop, no effects. For Play button. */
+export function previewClipUrl(projectId: string, clipIndex: number): string {
+  return `${API}/clip/${projectId}/preview/${clipIndex}`;
+}
+
+/** Fetch preview (9:16) as blob URL for inline playback. */
+export async function fetchPreviewAsBlobUrl(
+  projectId: string,
+  clipIndex: number
+): Promise<string> {
+  const url = previewClipUrl(projectId, clipIndex);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Failed to load preview");
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
 /** Fetch extract as blob URL for inline playback (avoids IDM interception). */
 export async function fetchExtractAsBlobUrl(
   projectId: string,

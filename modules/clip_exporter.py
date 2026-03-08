@@ -493,15 +493,18 @@ class ClipExporter:
                         f"[0:v]setsar=1,crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920[v_mixed];"
                     )
             else:
-                # Landscape Fit mode (original blur background)
+                # Landscape Fit (blur) OR podcast_smart fallback (center crop)
                 if export_mode == "face_tracking" and not MEDIAPIPE_AVAILABLE:
                     print("  [WARNING] Face tracking requires MediaPipe - using landscape fit mode")
-                
-                fc_str = (
-                    f"[0:v]setsar=1,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:10[bg_v];"
-                    f"[0:v]setsar=1,scale=1080:-1[fg_v];"
-                    f"[bg_v][fg_v]overlay=(W-w)/2:(H-h)/2[v_mixed];"
-                )
+                if export_mode == "podcast_smart" and effective_video_path == str(self.parent.video_path):
+                    print("  [PODCAST SMART] Fallback - using 9:16 center crop")
+                    fc_str = "[0:v]setsar=1,crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920[v_mixed];"
+                else:
+                    fc_str = (
+                        f"[0:v]setsar=1,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:10[bg_v];"
+                        f"[0:v]setsar=1,scale=1080:-1[fg_v];"
+                        f"[bg_v][fg_v]overlay=(W-w)/2:(H-h)/2[v_mixed];"
+                    )
             
             # --- DYNAMIC ZOOM (Ken Burns style) ---
             zoom_enabled = self.parent.custom_settings.get("dynamic_zoom_enabled", False)
