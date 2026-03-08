@@ -69,7 +69,7 @@ export const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
 };
 
 export const EXPORT_MODE_OPTIONS: { value: ExportMode; label: string }[] = [
+  { value: "podcast_smart", label: "Podcast Smart (Active Speaker)" },
   { value: "face_tracking", label: "9:16 Portrait (Shorts/Reels)" },
   { value: "landscape_fit", label: "Landscape (Blur Background)" },
-  { value: "podcast_smart", label: "Podcast Smart (Active Speaker)" },
 ];
