@@ -825,10 +825,82 @@ class AISegmentAnalyzer:
         full = " ".join(parts).strip()
         return self._extract_core_hook_from_text(full) if full else ""
 
+    def _get_viral_segments_opus_style(self, formatted_transcript: str, duration_sec: float) -> list:
+        """
+        [OPUS-STYLE] Sliding window: 25s window, 10s step. Multi-signal scoring.
+        Returns top 15 clips (15-45s), deduplicated if overlap >60%.
+        """
+        window_size = self.OPUS_WINDOW_SIZE
+        step_size = self.OPUS_STEP_SIZE
+        min_dur = self.OPUS_CLIP_MIN
+        max_dur = self.OPUS_CLIP_MAX
+        top_n = self.OPUS_TOP_CLIPS
+
+        candidates = []
+        start = 0
+        while start + min_dur <= duration_sec:
+            end = min(start + window_size, duration_sec)
+            dur = end - start
+            if dur < min_dur:
+                start += step_size
+                continue
+
+            window_text = self._slice_transcript_by_time(formatted_transcript, start, end)
+            if len(window_text.strip()) < 30:
+                start += step_size
+                continue
+
+            if self._is_filler_heavy(window_text):
+                start += step_size
+                continue
+
+            hook = self._compute_hook_score(window_text)
+            emotion = self._compute_emotion_score(window_text)
+            controversy = self._compute_controversy_score(window_text)
+            info_density = self._compute_information_density_score(window_text)
+
+            viral = 0.4 * hook + 0.3 * emotion + 0.2 * controversy + 0.1 * info_density
+            if viral < 3.0:
+                start += step_size
+                continue
+
+            clip_end = min(end, start + max_dur)
+            clip_dur = clip_end - start
+            if clip_dur >= min_dur:
+                candidates.append({
+                    "start": start,
+                    "end": clip_end,
+                    "viral_score": round(viral, 1),
+                    "hook_score": hook,
+                    "emotion_score": emotion,
+                    "controversy_score": controversy,
+                    "info_density_score": info_density,
+                    "hook": window_text[:80].strip(),
+                })
+            start += step_size
+
+        candidates.sort(key=lambda x: x["viral_score"], reverse=True)
+
+        deduped = []
+        for seg in candidates:
+            overlap_any = False
+            for kept in deduped:
+                ov = max(0, min(seg["end"], kept["end"]) - max(seg["start"], kept["start"]))
+                dur_min = min(seg["end"] - seg["start"], kept["end"] - kept["start"])
+                if dur_min > 0 and (ov / dur_min) > self.OPUS_OVERLAP_THRESHOLD:
+                    overlap_any = True
+                    break
+            if not overlap_any:
+                deduped.append(seg)
+            if len(deduped) >= top_n:
+                break
+
+        return deduped[:top_n]
+
     def get_viral_segments_from_ai(self, raw_transcript, keyword=None):
         """
         [MOMENT-FIRST] Detect viral clips: transcript -> hook moments -> expand -> score -> rank.
-        Produces 15–30 high-quality clips that start at the important statement.
+        [OPUS-STYLE] When sub_transcriptions available: sliding window 25s/10s for 10-30 clips.
         """
         if not raw_transcript:
             return None
@@ -846,9 +918,16 @@ class AISegmentAnalyzer:
         duration_sec = self._get_transcript_duration_sec(formatted_transcript)
         duration_sec = max(duration_sec, 60)
 
-        # [MOMENT-FIRST] Primary path when sub_transcriptions available
+        # [OPUS-STYLE] Primary path: sliding window for many clips (10-30 per video)
         openai_segments = []
         if getattr(self.parent, "sub_transcriptions", None) and self.parent.sub_transcriptions:
+            opus_segments = self._get_viral_segments_opus_style(formatted_transcript, duration_sec)
+            if opus_segments:
+                print(f"  [OPUS] Sliding window: {len(opus_segments)} clips (15-45s)")
+                openai_segments = opus_segments
+
+        # [MOMENT-FIRST] Fallback when Opus returns none
+        if not openai_segments and getattr(self.parent, "sub_transcriptions", None) and self.parent.sub_transcriptions:
             moments = self._detect_hook_moments()
             print(f"  [MOMENT] Detected {len(moments)} hook moments")
 
