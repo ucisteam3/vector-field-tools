@@ -17,7 +17,7 @@ export default function SettingsPage() {
             Konfigurasi pengaturan sebelum memulai analisis. Preview dan hasil export akan mengikuti pengaturan ini.
           </p>
           <div className="rounded-xl border border-zinc-700 bg-zinc-800/50 overflow-hidden">
-            <ExportSettingsPanel settings={settings} onChange={setSettings} />
+            <ExportSettingsPanel settings={settings} onChange={setSettings} standalone />
           </div>
         </div>
       </main>

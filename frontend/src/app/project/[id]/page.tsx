@@ -4,10 +4,10 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Film, Play, Download, ChevronLeft, Loader2, Sparkles, Settings2, Settings, PanelRightOpen, PanelRightClose } from "lucide-react";
+import { Film, Play, Download, Loader2, Sparkles, Settings2 } from "lucide-react";
 import { getProject, getProjectStatus, exportClipWithSettings, videoUrl, clipUrl, downloadClipExtract, type Project, type Clip } from "@/lib/api";
-import ExportSettingsPanel from "@/components/ExportSettingsPanel";
-import { type ExportSettings, DEFAULT_EXPORT_SETTINGS } from "@/lib/export-settings";
+import AppSidebar from "@/components/AppSidebar";
+import { useAppSettings } from "@/lib/settings-store";
 
 export default function ProjectPage() {
   const params = useParams();
@@ -19,8 +19,7 @@ export default function ProjectPage() {
   const [exporting, setExporting] = useState<Set<number>>(new Set());
   const [downloading, setDownloading] = useState<Set<number>>(new Set());
   const previewEndRef = useRef<{ index: number; end: number } | null>(null);
-  const [exportSettings, setExportSettings] = useState<ExportSettings>(() => ({ ...DEFAULT_EXPORT_SETTINGS }));
-  const [settingsPanelOpen, setSettingsPanelOpen] = useState(true);
+  const [exportSettings] = useAppSettings();
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const loadProject = async () => {
@@ -152,47 +151,9 @@ export default function ProjectPage() {
   const duration = clips.length > 0 ? Math.max(...clips.map((c) => c.end)) : 0;
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <aside className={`border-r border-white/10 bg-black/30 fixed left-0 top-0 bottom-0 flex flex-col z-20 transition-all duration-200 ${settingsPanelOpen ? "w-80" : "w-64"}`}>
-        <div className="p-6">
-          <Link href="/" className="flex items-center gap-2 text-xl font-bold text-cyan-400">
-            <Film className="w-8 h-8" /> AI Clipper
-          </Link>
-        </div>
-        <nav className="px-4 space-y-1 flex-shrink-0">
-          <Link href="/" className="flex items-center gap-2 px-4 py-3 rounded-lg text-zinc-400 hover:text-white transition-colors">
-            <ChevronLeft className="w-5 h-5" /> Dashboard
-          </Link>
-          <button
-            onClick={() => setSettingsPanelOpen(!settingsPanelOpen)}
-            className={`w-full flex items-center gap-2 px-4 py-3 rounded-lg transition-colors ${
-              settingsPanelOpen ? "bg-cyan-500/20 text-cyan-400" : "text-zinc-400 hover:text-white"
-            }`}
-          >
-            <Settings className="w-5 h-5" />
-            Pengaturan Tampilan
-            {settingsPanelOpen ? <PanelRightClose className="w-4 h-4 ml-auto" /> : <PanelRightOpen className="w-4 h-4 ml-auto" />}
-          </button>
-        </nav>
-        <AnimatePresence>
-          {settingsPanelOpen && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.2 }}
-              className="flex-1 min-h-0 flex flex-col overflow-hidden border-t border-white/5"
-            >
-              <div className="py-3 px-2 text-sm font-medium text-cyan-400/80 border-b border-white/5">
-                Preview mengikuti pengaturan ini
-              </div>
-              <ExportSettingsPanel settings={exportSettings} onChange={setExportSettings} embedded />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </aside>
-
-      <main className={`flex-1 p-6 flex flex-col min-h-0 transition-all duration-200 ${settingsPanelOpen ? "ml-80" : "ml-64"}`}>
+    <div className="min-h-screen flex flex-col bg-[#0a0c10]">
+      <AppSidebar />
+      <main className="flex-1 ml-64 p-6 flex flex-col min-h-0">
         <div className="flex gap-4 flex-1 min-h-0 overflow-x-auto overflow-y-hidden min-w-0">
           <div className="flex-1 flex flex-col min-w-0 relative">
             <div
