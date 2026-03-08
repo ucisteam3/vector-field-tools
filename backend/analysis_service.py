@@ -61,43 +61,59 @@ def _set_status(project_id: str, status: str, progress: str = None, error: str =
 
 
 def _compute_eta(progress: str) -> tuple[int, str]:
-    """Estimate ETA seconds and human-readable message. Returns (seconds, message)."""
+    """Compute ETA from real progress when possible. Conservative estimates otherwise."""
     import re
     if not progress:
         return (300, "~5 min")
     p = progress.lower()
-    # Download percentage: "Downloading... 43.0%"
+
+    # 1) Rendering clips N/M — AKURAT: sisa (M-N) × ~100 detik/klip
+    mr = re.search(r"rendering\s+clips\s+(\d+)\s*/\s*(\d+)", p, re.I)
+    if mr:
+        try:
+            current, total = int(mr.group(1)), int(mr.group(2))
+            if total > 0 and current < total:
+                remaining_clips = total - current
+                secs_per_clip = 100  # conservative: 1.5–2 min per clip
+                secs = remaining_clips * secs_per_clip
+                if secs >= 60:
+                    return (secs, f"~{secs // 60} min")
+                return (secs, f"~{secs} detik")
+            return (60, "~1 min")
+        except (ValueError, TypeError):
+            pass
+
+    # 2) Download percentage — AKURAT dari progress nyata
     m = re.search(r"downloading\.+[\s]*([\d.]+)\s*%", p, re.I)
     if m:
         try:
             pct = float(m.group(1))
             remaining_pct = max(0, (100 - pct) / 100)
-            # Assume ~5 min total for typical video
             secs = int(remaining_pct * 300)
             if secs >= 120:
                 return (secs, f"~{secs // 60} min")
             return (secs, f"~{secs} detik")
         except ValueError:
             pass
-    # Stage-based estimates (seconds)
-    # Rendering: 10–20+ clips × ~1–2 min/clip → ~10–30 min typical
+
+    # 3) Fase lain — estimasi konservatif (sedikit overestimate)
     estimates = {
-        "copying": (30, "~30 detik"),
-        "download complete": (90, "~1.5 min"),
-        "preparing": (60, "~1 min"),
-        "downloading subtitles": (30, "~30 detik"),
-        "extracting transcript": (45, "~45 detik"),
-        "transcribing with ai": (120, "~2 min"),
-        "detecting viral": (90, "~1.5 min"),
-        "matching segments": (30, "~30 detik"),
-        "generating titles": (45, "~45 detik"),
-        "rendering": (900, "~15 min"),   # 10–20 clips × ~1 min; can be 10–30 min total
+        "copying": (45, "~45 detik"),
+        "download complete": (120, "~2 min"),
+        "preparing": (90, "~1.5 min"),
+        "downloading subtitles": (45, "~45 detik"),
+        "extracting transcript": (90, "~1.5 min"),
+        "transcribing with ai": (180, "~3 min"),
+        "detecting viral": (120, "~2 min"),
+        "matching segments": (45, "~45 detik"),
+        "generating titles": (90, "~1.5 min"),
+        "rendering": (600, "~10 min"),  # fallback jika belum dapat N/M
         "starting": (300, "~5 min"),
     }
     for key, (secs, msg) in estimates.items():
         if key in p:
             return (secs, msg)
-    return (60, "~1 min")
+    return (120, "~2 min")
 
 
 def get_analysis_status(project_id: str) -> dict:
@@ -296,13 +312,17 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None):
                 status="analyzing",
                 error=None,
             )
+            num_clips = len(clips)
             prog("Rendering clips...")
-            _set_status(project_id, "analyzing", "Rendering clips...")
+
+            def render_progress(current: int, total: int):
+                _set_status(project_id, "analyzing", f"Rendering clips {current}/{total}...")
+
             try:
                 from backend.clip_service import export_all_clips
                 meta = get_project(project_id)
                 settings = meta.get("export_settings")
-                export_all_clips(project_id, settings)
+                export_all_clips(project_id, settings, on_progress=render_progress)
             except Exception as pre_render_err:
                 import traceback
                 traceback.print_exc()

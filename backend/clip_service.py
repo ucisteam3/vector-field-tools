@@ -147,8 +147,10 @@ def export_clip(project_id: str, clip_index: int, settings: Optional[dict] = Non
     return None
 
 
-def export_all_clips(project_id: str, settings: Optional[dict] = None) -> list[str]:
-    """Export all clips for a project. Returns list of clip filenames."""
+def export_all_clips(project_id: str, settings: Optional[dict] = None, on_progress=None) -> list[str]:
+    """Export all clips for a project. Returns list of clip filenames.
+    on_progress(current_index, total) called before each clip.
+    """
     from backend.project_manager import get_project
     meta = get_project(project_id)
     if not meta or not meta.get("clips"):
@@ -156,8 +158,14 @@ def export_all_clips(project_id: str, settings: Optional[dict] = None) -> list[s
     merged = meta.get("export_settings") or {}
     if settings:
         merged = {**merged, **settings}
+    total = len(meta["clips"])
     exported = []
-    for i in range(len(meta["clips"])):
+    for i in range(total):
+        if on_progress:
+            try:
+                on_progress(i + 1, total)
+            except Exception:
+                pass
         fn = export_clip(project_id, i, merged if merged else None)
         if fn:
             exported.append(fn)

@@ -272,17 +272,23 @@ export default function HomePage() {
                                 <span className="text-xs text-cyan-400 font-medium text-center">
                                   {(() => {
                                     const prog = statusCache[p.project_id]?.progress || "Loading...";
-                                    const m = prog.match(/([\d.]+)\s*%/);
-                                    return m ? `${m[1]}%` : prog.replace(/\.\.\.?\s*$/, "");
+                                    const pctMatch = prog.match(/([\d.]+)\s*%/);
+                                    const nmMatch = prog.match(/(\d+)\s*\/\s*(\d+)/);
+                                    if (pctMatch) return `${pctMatch[1]}%`;
+                                    if (nmMatch) return `${nmMatch[1]}/${nmMatch[2]}`;
+                                    return prog.replace(/\.\.\.?\s*$/, "");
                                   })()}
                                 </span>
                                 {statusCache[p.project_id]?.eta_message && (
-                                  <span className="text-[10px] text-zinc-400">~{statusCache[p.project_id].eta_message}</span>
+                                  <span className="text-[10px] text-zinc-400">{statusCache[p.project_id].eta_message}</span>
                                 )}
                                 {(() => {
                                   const prog = statusCache[p.project_id]?.progress || "";
-                                  const m = prog.match(/([\d.]+)\s*%/);
-                                  const pct = m ? parseFloat(m[1]) : 0;
+                                  let pct = 0;
+                                  const pctMatch = prog.match(/([\d.]+)\s*%/);
+                                  const nmMatch = prog.match(/(\d+)\s*\/\s*(\d+)/);
+                                  if (pctMatch) pct = parseFloat(pctMatch[1]);
+                                  else if (nmMatch) pct = (parseInt(nmMatch[1], 10) / parseInt(nmMatch[2], 10)) * 100;
                                   if (pct > 0 && pct < 100) {
                                     return (
                                       <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-700">
