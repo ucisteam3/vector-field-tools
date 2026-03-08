@@ -243,6 +243,52 @@ def serve_video(project_id: str):
     return FileResponse(vp, media_type="video/mp4")
 
 
+@app.get("/clip/{project_id}/thumbnail/{clip_index:int}")
+def clip_thumbnail(project_id: str, clip_index: int):
+    """
+    Extract a single frame from the clip as thumbnail (9:16 crop).
+    Frame taken ~1s into clip or 15% of duration.
+    """
+    import subprocess
+    meta = get_project(project_id)
+    if not meta or not meta.get("clips"):
+        raise HTTPException(status_code=404, detail="Project not found")
+    clips = meta["clips"]
+    if clip_index < 0 or clip_index >= len(clips):
+        raise HTTPException(status_code=404, detail="Clip not found")
+    vp = get_video_path(project_id)
+    if not vp or not vp.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+    clip_info = clips[clip_index]
+    start = float(clip_info.get("start", 0))
+    end = float(clip_info.get("end", 0))
+    duration = end - start
+    if duration <= 0:
+        raise HTTPException(status_code=400, detail="Invalid clip duration")
+    # Frame at 1s in or 15% of duration
+    seek = start + min(1.0, duration * 0.15)
+    out_dir = PROJECTS_DIR / project_id / "clips"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"_thumb_{clip_index}.jpg"
+    try:
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(seek),
+            "-i", str(vp),
+            "-vf", "crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=540:960",
+            "-vframes", "1",
+            str(out_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, creationflags=0x08000000 if __import__("os").name == "nt" else 0)
+        if result.returncode != 0 or not out_path.exists():
+            raise HTTPException(status_code=500, detail="Thumbnail failed")
+        return FileResponse(out_path, media_type="image/jpeg")
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Thumbnail timeout")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/clip/{project_id}/preview/{clip_index:int}")
 def preview_clip_segment(project_id: str, clip_index: int):
     """

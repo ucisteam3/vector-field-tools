@@ -175,6 +175,11 @@ export function extractClipUrl(projectId: string, clipIndex: number): string {
   return `${API}/clip/${projectId}/extract/${clipIndex}`;
 }
 
+/** Thumbnail: single frame from clip (9:16). For card preview. */
+export function thumbnailClipUrl(projectId: string, clipIndex: number): string {
+  return `${API}/clip/${projectId}/thumbnail/${clipIndex}`;
+}
+
 /** Preview: 9:16 center crop, no effects. For Play button. */
 export function previewClipUrl(projectId: string, clipIndex: number): string {
   return `${API}/clip/${projectId}/preview/${clipIndex}`;

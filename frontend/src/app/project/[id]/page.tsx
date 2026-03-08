@@ -9,6 +9,7 @@ import {
   getProject,
   getProjectStatus,
   playClipUrl,
+  thumbnailClipUrl,
   fetchPreviewAsBlobUrl,
   exportClipWithSettings,
   type Project,
@@ -63,16 +64,11 @@ export default function ProjectPage() {
 
   const playClip = async (index: number) => {
     const clip = project?.clips?.[index];
-    if (!clip?.clip_path) return;
+    if (!clip) return;
     setPlayingClip(index);
     if (blobCache[index]) return;
     try {
-      const filename = clip.clip_path.replace("clips/", "");
-      const url = playClipUrl(id, filename);
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Failed to load");
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
+      const blobUrl = await fetchPreviewAsBlobUrl(id, index);
       setBlobCache((prev) => ({ ...prev, [index]: blobUrl }));
     } catch (e) {
       console.error(e);
@@ -151,7 +147,7 @@ export default function ProjectPage() {
               <span>{status?.progress || "Analyzing..."}</span>
             </div>
           ) : (
-            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2 overflow-y-auto pb-4">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3 overflow-y-auto pb-4">
               {clips.map((clip, i) => (
                 <motion.div
                   key={i}
@@ -176,9 +172,11 @@ export default function ProjectPage() {
                       </div>
                     ) : (
                       <>
-                        <div className="w-full h-full bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center">
-                          <Play className="w-10 h-10 text-white/30" />
-                        </div>
+                        <img
+                          src={thumbnailClipUrl(id, i)}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
                         <div
                           className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                           onClick={() => playClip(i)}
