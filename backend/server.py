@@ -314,12 +314,13 @@ def preview_clip_segment(project_id: str, clip_index: int):
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"_preview_{clip_index}.mp4"
     try:
-        # Center crop to 9:16, scale 1080x1920 - no other effects
+        duration = end - start
+        # -ss after -i for A/V sync
         cmd = [
             "ffmpeg", "-y",
-            "-ss", str(start),
-            "-to", str(end),
             "-i", str(vp),
+            "-ss", str(start),
+            "-t", str(duration),
             "-vf", "crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920",
             "-c:a", "aac",
             "-avoid_negative_ts", "1",
@@ -363,11 +364,12 @@ def extract_clip_segment(project_id: str, clip_index: int):
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{safe_name}_{clip_index}.mp4"
     try:
+        duration = end - start
         cmd = [
             "ffmpeg", "-y",
-            "-ss", str(start),
-            "-to", str(end),
             "-i", str(vp),
+            "-ss", str(start),
+            "-t", str(duration),
             "-c", "copy",
             "-avoid_negative_ts", "1",
             str(out_path),

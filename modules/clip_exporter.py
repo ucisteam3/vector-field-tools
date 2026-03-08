@@ -402,15 +402,18 @@ class ClipExporter:
                     pad_start = max(0, result['start'] - 0.2)
                     pad_end = result['start'] + duration + 0.2
                     subprocess.run([
-                        'ffmpeg', '-y', '-ss', str(pad_start), '-t', str(pad_end - pad_start),
-                        '-i', str(self.parent.video_path), '-vn', '-acodec', 'copy',
+                        'ffmpeg', '-y', '-i', str(self.parent.video_path),
+                        '-ss', str(pad_start), '-t', str(pad_end - pad_start),
+                        '-vn', '-acodec', 'copy',
                         str(temp_audio)
                     ], capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
                     # Mux
                     temp_full = Path(LOCAL_TEMP_DIR) / f"podcast_full_{int(time.time())}.mp4"
                     subprocess.run([
                         'ffmpeg', '-y', '-i', str(temp_video), '-i', str(temp_audio),
-                        '-c:v', 'copy', '-c:a', 'aac', '-shortest', str(temp_full)
+                        '-c:v', 'copy', '-c:a', 'aac', '-shortest',
+                        '-fflags', '+genpts', '-max_muxing_queue_size', '1024',
+                        str(temp_full)
                     ], capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
                     effective_video_path = str(temp_full)
                     effective_start = 0
@@ -863,17 +866,15 @@ class ClipExporter:
                 rest_inputs = input_args[2:] if len(input_args) > 2 else []
                 base_cmd = [
                     'ffmpeg', '-y',
+                    '-fflags', '+genpts',        # Regenerate PTS for sync
                     *first_input,
                     '-ss', str(pad_start),
                     '-t', str(pad_duration),
-                    *rest_inputs
-                ]
-                
-                # Add filter and mapping
-                base_cmd.extend([
+                    *rest_inputs,
                     '-filter_complex', filter_complex,
-                    '-map', '[v_out]', '-map', '[a_out]'
-                ])
+                    '-map', '[v_out]', '-map', '[a_out]',
+                    '-max_muxing_queue_size', '1024',  # Avoid buffer drops
+                ]
 
                 if encoder == "gpu":
                     # NVENC (NVIDIA) - p1 = fastest, max GPU throughput
