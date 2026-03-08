@@ -414,7 +414,7 @@ class ClipExporter:
                     ], capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
                     effective_video_path = str(temp_full)
                     effective_start = 0
-                    effective_duration = duration
+                    effective_duration = pad_end - pad_start
                     try:
                         temp_video.unlink(missing_ok=True)
                         temp_audio.unlink(missing_ok=True)
@@ -422,8 +422,14 @@ class ClipExporter:
                         pass
                 except Exception as e:
                     print(f"  [PODCAST SMART ERROR] {e} - falling back to center crop")
-            
-            if export_mode == "face_tracking" and MEDIAPIPE_AVAILABLE:
+
+            # Use effective video path for inputs (podcast_smart replaces with pre-cropped temp)
+            if input_args[0] == '-i':
+                input_args[1] = effective_video_path
+
+            if export_mode == "podcast_smart" and effective_video_path != str(self.parent.video_path):
+                fc_str = "[0:v]setsar=1[v_mixed];"
+            elif export_mode == "face_tracking" and MEDIAPIPE_AVAILABLE:
                 print("  [FACE TRACKING] Analyzing clip segment for face positions...")
                 try:
                     # Initialize face tracker
@@ -838,10 +844,14 @@ class ClipExporter:
             
             def get_ffmpeg_cmd(encoder="cpu"):
                 # Apply Audio Padding (Competitor Rule: 0.2s buffer)
-                # Adjust start/duration but ensure we don't go out of bounds (0 check)
-                pad_start = max(0, result['start'] - 0.2) 
-                pad_end = result['start'] + duration + 0.2
-                pad_duration = pad_end - pad_start
+                # For podcast_smart pre-cropped, effective_* already has full clip
+                if effective_video_path != str(self.parent.video_path):
+                    pad_start = effective_start
+                    pad_duration = effective_duration
+                else:
+                    pad_start = max(0, result['start'] - 0.2)
+                    pad_end = result['start'] + duration + 0.2
+                    pad_duration = pad_end - pad_start
 
                 base_cmd = [
                     'ffmpeg', '-y',

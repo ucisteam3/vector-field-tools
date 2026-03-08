@@ -144,7 +144,7 @@ export default function ProjectPage() {
                 >
                   <div
                     className={`relative ${
-                      displayMode === "face_tracking" ? "aspect-[9/16]" : "aspect-video"
+                      displayMode === "face_tracking" || displayMode === "podcast_smart" ? "aspect-[9/16]" : "aspect-video"
                     } bg-zinc-900`}
                   >
                     {playingClip === i ? (
