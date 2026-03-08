@@ -56,6 +56,22 @@ from backend.clip_service import export_clip, export_all_clips
 
 app = FastAPI(title="AI Video Clipper", version="1.0")
 
+
+@app.exception_handler(Exception)
+def global_exception_handler(request, exc):
+    """Log and return 500 for unhandled exceptions. Let HTTPException pass through."""
+    if isinstance(exc, HTTPException):
+        raise exc
+    import traceback
+    print(f"[SERVER] Unhandled exception: {exc}")
+    traceback.print_exc()
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "type": type(exc).__name__},
+    )
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -107,32 +123,51 @@ def analyze(req: AnalyzeRequest):
 
 def _sanitize_project(meta: dict) -> dict:
     """Ensure error/title/clips are safe for Windows encoding (no Unicode arrows etc)."""
-    out = dict(meta)
-    if out.get("error"):
-        out["error"] = _safe_str(out["error"])
-    if out.get("title"):
-        out["title"] = _safe_str(out["title"])
-    if out.get("clips"):
-        out["clips"] = [
-            {**c, "title": _safe_str(c.get("title", ""))}
-            for c in out["clips"]
-        ]
-    return out
+    try:
+        out = dict(meta)
+        if out.get("error"):
+            out["error"] = _safe_str(str(out["error"]))
+        if out.get("title"):
+            out["title"] = _safe_str(str(out["title"]))
+        if out.get("clips"):
+            out["clips"] = [
+                {**c, "title": _safe_str(str(c.get("title", "")))}
+                for c in out["clips"]
+            ]
+        return out
+    except Exception as e:
+        print(f"[SERVER] _sanitize_project error: {e}")
+        return meta
 
 
 @app.get("/projects")
 def projects_list():
     """List all projects."""
-    return [_sanitize_project(p) for p in list_projects()]
+    try:
+        projects = list_projects()
+        return [_sanitize_project(p) for p in projects]
+    except Exception as e:
+        print(f"[SERVER] projects_list error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to list projects: {str(e)}")
 
 
 @app.get("/project/{project_id}")
 def project_detail(project_id: str):
     """Get project metadata and clips."""
-    meta = get_project(project_id)
-    if not meta:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return _sanitize_project(meta)
+    try:
+        meta = get_project(project_id)
+        if not meta:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return _sanitize_project(meta)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[SERVER] project_detail error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to load project: {str(e)}")
 
 
 @app.get("/project/{project_id}/status")
@@ -236,10 +271,18 @@ def export_single_clip(project_id: str, clip_index: int):
 @app.post("/export_clip")
 def export_clip_with_settings(req: ExportClipRequest):
     """Export a clip with full settings. project_id, clip_id (index), settings."""
-    fn = export_clip(req.project_id, req.clip_id, req.settings)
-    if not fn:
-        raise HTTPException(status_code=404, detail="Export failed")
-    return {"clip_path": f"clips/{fn}"}
+    try:
+        fn = export_clip(req.project_id, req.clip_id, req.settings)
+        if not fn:
+            raise HTTPException(status_code=404, detail="Export failed")
+        return {"clip_path": f"clips/{fn}"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[SERVER] export_clip error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
 
 
 # Upload directories

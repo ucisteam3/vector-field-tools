@@ -70,8 +70,12 @@ def get_project(project_id: str) -> Optional[dict]:
     meta_path = PROJECTS_DIR / project_id / "metadata.json"
     if not meta_path.exists():
         return None
-    with open(meta_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"[PROJECT] Failed to load {meta_path}: {e}")
+        return None
 
 
 def list_projects() -> list:
