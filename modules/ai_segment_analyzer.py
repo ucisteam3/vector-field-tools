@@ -563,10 +563,15 @@ class AISegmentAnalyzer:
                 else:
                     t_sec = int(g[0]) * 60 + int(g[1])
             else:
-                match2 = re.match(r"^(?:(\d+):)?(\d{1,2}):(\d{2})(?::(\d{2}))?\s", line)
+                match2 = re.match(r"^(\d+):(\d{2}):(\d{2})\s", line)
                 if match2:
                     h, m, s = match2.groups()
-                    t_sec = (int(h or 0) * 3600) + int(m) * 60 + int(s)
+                    t_sec = int(h) * 3600 + int(m) * 60 + int(s)
+                else:
+                    match3 = re.match(r"^(\d{1,2}):(\d{2})\s", line)
+                    if match3:
+                        m, s = match3.groups()
+                        t_sec = int(m) * 60 + int(s)
             if t_sec is not None and start_sec <= t_sec <= end_sec:
                 lines.append(line)
         return "\n".join(lines) if lines else ""
@@ -869,14 +874,21 @@ class AISegmentAnalyzer:
 
     def _get_viral_segments_opus_style(self, formatted_transcript: str, duration_sec: float) -> list:
         """
-        [OPUS-STYLE] Sliding window: 25s window, 10s step. Multi-signal scoring.
-        Returns top 15 clips (15-45s), deduplicated if overlap >60%.
+        [OPUS-STYLE] Sliding window: 25s window, 10s step (0-25, 10-35, 20-45...).
+        Multi-signal scoring: viral = 0.35*hook + 0.25*emotion + 0.20*argument + 0.10*controversy + 0.10*info_density.
+        Returns top 20 clips (15-45s), deduplicated if overlap >60%.
         """
         window_size = self.OPUS_WINDOW_SIZE
         step_size = self.OPUS_STEP_SIZE
         min_dur = self.OPUS_CLIP_MIN
         max_dur = self.OPUS_CLIP_MAX
         top_n = self.OPUS_TOP_CLIPS
+        has_cues = bool(getattr(self.parent, "sub_transcriptions", None))
+
+        def get_window_text(s, e):
+            if has_cues:
+                return self._get_transcript_for_range_from_cues(s, e)
+            return self._slice_transcript_by_time(formatted_transcript, s, e)
 
         candidates = []
         start = 0
@@ -887,7 +899,7 @@ class AISegmentAnalyzer:
                 start += step_size
                 continue
 
-            window_text = self._slice_transcript_by_time(formatted_transcript, start, end)
+            window_text = get_window_text(start, end)
             if len(window_text.strip()) < 30:
                 start += step_size
                 continue
@@ -896,13 +908,17 @@ class AISegmentAnalyzer:
                 start += step_size
                 continue
 
-            hook = self._compute_hook_score(window_text)
+            first_3s_text = get_window_text(start, min(end, start + 3.5))
+            hook = self._compute_hook_score(window_text, first_3s_text)
             emotion = self._compute_emotion_score(window_text)
+            argument = self._compute_argument_score(window_text)
             controversy = self._compute_controversy_score(window_text)
             info_density = self._compute_information_density_score(window_text)
-
-            viral = 0.4 * hook + 0.3 * emotion + 0.2 * controversy + 0.1 * info_density
-            if viral < 3.0:
+            viral = (
+                0.35 * hook + 0.25 * emotion + 0.20 * argument
+                + 0.10 * controversy + 0.10 * info_density
+            )
+            if viral < 2.0:
                 start += step_size
                 continue
 
@@ -915,6 +931,7 @@ class AISegmentAnalyzer:
                     "viral_score": round(viral, 1),
                     "hook_score": hook,
                     "emotion_score": emotion,
+                    "argument_score": argument,
                     "controversy_score": controversy,
                     "info_density_score": info_density,
                     "hook": window_text[:80].strip(),
@@ -922,7 +939,6 @@ class AISegmentAnalyzer:
             start += step_size
 
         candidates.sort(key=lambda x: x["viral_score"], reverse=True)
-
         deduped = []
         for seg in candidates:
             overlap_any = False
@@ -936,29 +952,39 @@ class AISegmentAnalyzer:
                 deduped.append(seg)
             if len(deduped) >= top_n:
                 break
-
         return deduped[:top_n]
 
     def get_viral_segments_from_ai(self, raw_transcript, keyword=None):
         """
-        [MOMENT-FIRST] Detect viral clips: transcript -> hook moments -> expand -> score -> rank.
-        [OPUS-STYLE] When sub_transcriptions available: sliding window 25s/10s for 10-30 clips.
+        [OPUS-STYLE] Sliding window 25s/10s for 10-30 clips. Multi-signal viral scoring.
+        [MOMENT-FIRST] Fallback: hook moments -> expand -> score.
         """
         if not raw_transcript:
             return None
 
-        # Build formatted transcript and duration
+        cues = getattr(self.parent, "sub_transcriptions", None) or {}
         formatted_transcript = ""
-        if isinstance(raw_transcript, dict):
+        duration_sec = 60.0
+        if cues and isinstance(cues, dict):
+            entries = sorted(cues.items(), key=lambda x: (x[1].get("start", 0) if isinstance(x[1], dict) else 0))
+            for _, entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                start = self._normalize_cue_time(entry.get("start") or entry.get("s", 0))
+                end = self._normalize_cue_time(entry.get("end") or entry.get("e") or start + 5)
+                duration_sec = max(duration_sec, end)
+                ts = f"[{int(start // 60):02d}:{int(start % 60):02d}]"
+                formatted_transcript += f"{ts} {entry.get('text', entry.get('t', ''))}\n"
+        elif isinstance(raw_transcript, dict):
             for i in sorted(raw_transcript.keys()):
                 entry = raw_transcript[i]
                 start = entry.get('start', 0)
                 ts = f"[{int(start // 60):02d}:{int(start % 60):02d}]"
                 formatted_transcript += f"{ts} {entry.get('text', '')}\n"
+            duration_sec = max(self._get_transcript_duration_sec(formatted_transcript), 60)
         else:
-            formatted_transcript = raw_transcript
-        duration_sec = self._get_transcript_duration_sec(formatted_transcript)
-        duration_sec = max(duration_sec, 60)
+            formatted_transcript = raw_transcript if isinstance(raw_transcript, str) else ""
+            duration_sec = max(self._get_transcript_duration_sec(formatted_transcript), 60)
 
         # [OPUS-STYLE] Primary path: sliding window for many clips (10-30 per video)
         openai_segments = []

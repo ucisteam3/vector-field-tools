@@ -261,7 +261,7 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None):
                 prog("Generating titles...")
                 ctx.generate_segment_titles_parallel()
 
-            # Build clips list for metadata
+            # Build clips list for metadata (PART 8: id, title, start, end, duration, score)
             clips = []
             for i, r in enumerate(ctx.analysis_results):
                 title = _safe_str((r.get("clickbait_title") or r.get("topic") or "Clip").strip())
@@ -269,11 +269,12 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None):
                 if not safe:
                     safe = f"clip_{i+1}"
                 clips.append({
+                    "id": i + 1,
+                    "title": title,
                     "start": r["start"],
                     "end": r["end"],
                     "duration": r["end"] - r["start"],
                     "score": int(r.get("final_score") or r.get("viral_score", r.get("virality_score", 0))),
-                    "title": title,
                     "clip_path": None,  # Filled when exported
                 })
 
