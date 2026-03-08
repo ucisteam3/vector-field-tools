@@ -1,6 +1,7 @@
 """
 Subtitle Parser Module
 Handles parsing of various subtitle formats (VTT, SRT, JSON3) and caption file management
+Backend-safe: works with WebAppContext or parent=None via safe_parent_call.
 """
 
 import os
@@ -8,6 +9,7 @@ import re
 import json
 from pathlib import Path
 from glob import glob
+from datetime import timedelta
 
 
 class SubtitleParser:
@@ -18,9 +20,24 @@ class SubtitleParser:
         Initialize Subtitle Parser
         
         Args:
-            parent: Reference to YouTubeHeatmapAnalyzer instance for accessing settings
+            parent: Reference to YouTubeHeatmapAnalyzer or WebAppContext (can be None)
         """
         self.parent = parent
+
+    def safe_parent_call(self, method, *args, **kwargs):
+        """Safely call a parent method if it exists. Returns None if parent=None or method missing."""
+        if self.parent is None:
+            return None
+        if hasattr(self.parent, method):
+            return getattr(self.parent, method)(*args, **kwargs)
+        return None
+
+    def _format_time(self, seconds):
+        """Format seconds for SRT. Uses parent.format_time if available, else local fallback."""
+        result = self.safe_parent_call("format_time", seconds)
+        if result is not None:
+            return str(result)
+        return str(timedelta(seconds=int(seconds)))
     
     def parse_manual_transcript(self, raw_text):
         """Parse raw text with timestamps and merge into meaningful segments (30s - 180s)"""
@@ -221,12 +238,12 @@ class SubtitleParser:
         """Return a priority-ordered list of possible caption keys."""
         keys = []
         if video_id:
-            keys.append(self.parent._caption_safe_key(video_id))
-            keys.append(f"{self.parent._caption_safe_key(video_id)}_source")
+            keys.append(self._caption_safe_key(video_id))
+            keys.append(f"{self._caption_safe_key(video_id)}_source")
         
         if video_path:
             base = os.path.splitext(os.path.basename(video_path))[0]
-            base = self.parent._caption_safe_key(base)
+            base = self._caption_safe_key(base)
             if base:
                 keys.append(base)
                 if base.endswith('_source'):
@@ -264,7 +281,7 @@ class SubtitleParser:
                         return {'found': True, 'path': cand, 'kind': kind}
         
         # PRIORITY 2: Try sanitized keys (for backward compatibility)
-        keys = self.parent.derive_caption_keys(video_path, video_id=video_id)
+        keys = self.derive_caption_keys(video_path, video_id=video_id)
         
         for d in search_dirs:
             for k in keys:
@@ -424,8 +441,8 @@ class SubtitleParser:
                     words_in_group = " ".join(current_group).split()
                     if len(words_in_group) >= max_words:
                         # Flush
-                        t0 = self.parent.format_time(group_start)
-                        t1 = self.parent.format_time(group_end)
+                        t0 = self._format_time(group_start)
+                        t1 = self._format_time(group_end)
                         f.write(f"{idx}\n{t0.replace('.', ',')} --> {t1.replace('.', ',')}\n{' '.join(current_group)}\n\n")
                         
                         idx += 1
@@ -434,8 +451,8 @@ class SubtitleParser:
                 
                 # Final flush
                 if current_group:
-                    t0 = self.parent.format_time(group_start)
-                    t1 = self.parent.format_time(group_end)
+                    t0 = self._format_time(group_start)
+                    t1 = self._format_time(group_end)
                     f.write(f"{idx}\n{t0.replace('.', ',')} --> {t1.replace('.', ',')}\n{' '.join(current_group)}\n\n")
                 
                 # Ensure file is written
@@ -450,8 +467,8 @@ class SubtitleParser:
         try:
             with open(out_path, 'w', encoding='utf-8') as f:
                 for idx, seg in enumerate(segments, 1):
-                    start_time = self.parent.format_time(seg['start']).replace('.', ',')
-                    end_time = self.parent.format_time(seg['end']).replace('.', ',')
+                    start_time = self._format_time(seg['start']).replace('.', ',')
+                    end_time = self._format_time(seg['end']).replace('.', ',')
                     text = seg['text']
                     f.write(f"{idx}\n{start_time} --> {end_time}\n{text}\n\n")
         except Exception as e:

@@ -40,16 +40,25 @@ except ImportError:
     MEDIAPIPE_AVAILABLE = False
 
 class ClipExporter:
-    """Manages clip export operations including download, encoding, and voiceover"""
+    """Manages clip export operations including download, encoding, and voiceover.
+    Backend-safe: works with WebAppContext via safe_parent_call."""
     
     def __init__(self, parent):
         """
         Initialize Clip Exporter
         
         Args:
-            parent: Reference to YouTubeHeatmapAnalyzer instance for accessing settings and video path
+            parent: Reference to YouTubeHeatmapAnalyzer or WebAppContext (can be None)
         """
         self.parent = parent
+
+    def safe_parent_call(self, method, *args, **kwargs):
+        """Safely call a parent method if it exists. Returns None if parent=None or method missing."""
+        if self.parent is None:
+            return None
+        if hasattr(self.parent, method):
+            return getattr(self.parent, method)(*args, **kwargs)
+        return None
     
     async def _amake_voiceover(self, text, output_path):
         """Internal async method for edge-tts"""
@@ -59,7 +68,10 @@ class ClipExporter:
     def generate_voiceover(self, text, output_path):
         """Generate voice over using edge-tts (Sync wrapper)"""
         try:
-            asyncio.run(self.parent._amake_voiceover(text, output_path))
+            if self.parent and hasattr(self.parent, "_amake_voiceover"):
+                asyncio.run(self.parent._amake_voiceover(text, output_path))
+            else:
+                asyncio.run(self._amake_voiceover(text, output_path))
             return True
         except Exception as e:
             print(f"  [ERROR] VoiceOver generation failed: {e}")
@@ -73,20 +85,31 @@ class ClipExporter:
             
             total = len(segments_to_download)
             for i, result in enumerate(segments_to_download):
-                self.parent.progress_var.set(f"Mengunduh klip {i+1}/{total}...")
-                # Update UI from main thread
-                self.parent.root.after(0, self.parent.root.update_idletasks)
-                self.parent.download_clip(result, clips_dir, i+1)
+                if self.parent and hasattr(self.parent, "progress_var"):
+                    self.parent.progress_var.set(f"Mengunduh klip {i+1}/{total}...")
+                if self.parent and hasattr(self.parent, "root"):
+                    self.parent.root.after(0, self.parent.root.update_idletasks)
+                if self.parent and hasattr(self.parent, "download_clip"):
+                    self.parent.download_clip(result, clips_dir, i+1)
+                else:
+                    self.download_clip(result, clips_dir, i+1)
             
-            self.parent.progress_var.set(f"Selesai! {total} klip disimpan di folder 'clips'.")
+            if self.parent and hasattr(self.parent, "progress_var"):
+                self.parent.progress_var.set(f"Selesai! {total} klip disimpan di folder 'clips'.")
             print(f"\n============================================================")
             print(f"Analysis & Export Complete! {total} klip berhasil disimpan.")
             print(f"============================================================\n")
-            self.parent.root.after(0, lambda: messagebox.showinfo("Berhasil", f"{total} klip berhasil diunduh!"))
+            if self.parent and hasattr(self.parent, "root"):
+                if hasattr(messagebox, "showinfo"):
+                    self.parent.root.after(0, lambda: messagebox.showinfo("Berhasil", f"{total} klip berhasil diunduh!"))
         except Exception as e:
-            self.parent.root.after(0, lambda: messagebox.showerror("Kesalahan", f"Thread pengunduhan gagal: {str(e)}"))
+            if self.parent and hasattr(self.parent, "root"):
+                if hasattr(messagebox, "showerror"):
+                    self.parent.root.after(0, lambda: messagebox.showerror("Kesalahan", f"Thread pengunduhan gagal: {str(e)}"))
+            print(f"  [ERROR] Thread pengunduhan gagal: {e}")
         finally:
-            self.parent.root.after(0, lambda: self.parent.download_btn.config(state=tk.NORMAL))
+            if self.parent and hasattr(self.parent, "download_btn") and hasattr(self.parent, "root"):
+                self.parent.root.after(0, lambda: self.parent.download_btn.config(state=tk.NORMAL))
 
     def detect_leading_silence(self, video_path, start_time, check_duration=3.0):
         """Detect silence at the beginning of the clip segment"""
@@ -145,8 +168,11 @@ class ClipExporter:
 
     def download_clip(self, result, output_dir=None, clip_num=None):
         """Download a single clip using ffmpeg with high quality re-encoding"""
-        if not self.parent.video_path:
-            messagebox.showerror("Error", "Video belum diunduh!")
+        if not self.parent or not getattr(self.parent, "video_path", None):
+            if hasattr(messagebox, "showerror"):
+                messagebox.showerror("Error", "Video belum diunduh!")
+            else:
+                print("  [ERROR] Video belum diunduh!")
             return False
 
         # [INSTANT START] Check for leading silence
@@ -622,12 +648,13 @@ class ClipExporter:
                     channel_name = getattr(self.parent, "channel_name", None)
                     if not channel_name or channel_name == "Unknown Channel":
                         # Fallback 1: coba ambil dari label UI jika ada
-                        try:
-                            ui_channel = self.parent.channel_name_label.cget("text")
-                            if ui_channel and ui_channel != "-":
-                                channel_name = ui_channel
-                        except Exception:
-                            pass
+                        if self.parent and hasattr(self.parent, "channel_name_label"):
+                            try:
+                                ui_channel = self.parent.channel_name_label.cget("text")
+                                if ui_channel and ui_channel != "-":
+                                    channel_name = ui_channel
+                            except Exception:
+                                pass
 
                     if not channel_name or channel_name == "Unknown Channel":
                         # Fallback 2: heuristik dari nama file (hanya jika ada pola " - ")
