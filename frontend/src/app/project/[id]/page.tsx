@@ -21,7 +21,6 @@ export default function ProjectPage() {
   const [exporting, setExporting] = useState<Set<number>>(new Set());
   const [downloading, setDownloading] = useState<Set<number>>(new Set());
   const playingVideoRef = useRef<HTMLVideoElement | null>(null);
-  const prefetchAbortRef = useRef<AbortController | null>(null);
   const [exportSettings] = useAppSettings();
   const displayMode = exportSettings?.export_mode ?? "face_tracking";
 
@@ -83,8 +82,6 @@ export default function ProjectPage() {
   const preFetchClip = (index: number) => {
     const clip = project?.clips?.[index];
     if (!clip?.clip_path && !clipBlobUrls[index]) {
-      prefetchAbortRef.current?.abort();
-      prefetchAbortRef.current = new AbortController();
       fetchExtractAsBlobUrl(id, index).then((blobUrl) => {
         setClipBlobUrls((prev) => ({ ...prev, [index]: blobUrl }));
       }).catch(() => {});
@@ -182,6 +179,7 @@ export default function ProjectPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.03 }}
                   className="rounded-xl border border-white/10 bg-white/5 overflow-hidden hover:bg-white/10 transition-colors group"
+                  onMouseEnter={() => preFetchClip(i)}
                 >
                   <div
                     className={`relative ${
@@ -220,12 +218,6 @@ export default function ProjectPage() {
                             className="w-full h-full object-cover"
                             onEnded={() => { setPlayingClip(null); setPlayingClipSrc(null); }}
                           />
-                        )}
-                        {clipLoading === i && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/60 pointer-events-none">
-                            <Loader2 className="w-12 h-12 animate-spin text-cyan-400" />
-                            <span className="ml-2 text-sm text-zinc-300">Memotong klip...</span>
-                          </div>
                         )}
                       </div>
                     ) : playingClip === i ? (
