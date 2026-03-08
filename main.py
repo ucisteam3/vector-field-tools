@@ -1,6 +1,6 @@
 import sys
 
-# Ensure UTF-8 output on Windows to prevent encoding crashes
+# Windows encoding fix: UTF-8 + safe stream wrapper for Unicode arrows/emoji
 if hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -8,6 +8,23 @@ if hasattr(sys.stdout, "reconfigure"):
             sys.stderr.reconfigure(encoding="utf-8")
     except (OSError, AttributeError):
         pass
+
+# Wrap stdout/stderr to replace \u2192 (arrow) etc before write
+_safe_replace = (("\u2192", "->"), ("\u2713", "OK"), ("\u2714", "OK"), ("\u2717", "X"))
+class _SafeStream:
+    def __init__(self, s): self._s = s
+    def write(self, x):
+        if isinstance(x, str):
+            for o, n in _safe_replace: x = x.replace(o, n)
+        self._s.write(x)
+    def flush(self): self._s.flush()
+    def __getattr__(self, k): return getattr(self._s, k)
+try:
+    sys.stdout = _SafeStream(sys.stdout)
+    if sys.stderr is not sys.stdout:
+        sys.stderr = _SafeStream(sys.stderr)
+except Exception:
+    pass
 
 import tkinter as tk
 print("[DEBUG] main.py started execution...")
