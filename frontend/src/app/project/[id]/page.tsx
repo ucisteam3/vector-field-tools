@@ -157,8 +157,8 @@ export default function ProjectPage() {
         <div className="flex gap-4 flex-1 min-h-0 overflow-x-auto overflow-y-hidden min-w-0">
           <div className="flex-1 flex flex-col min-w-0 relative">
             <div
-              className={`rounded-xl bg-black overflow-hidden max-w-md mx-auto ${
-                exportSettings.export_mode === "face_tracking" ? "aspect-[9/16]" : "aspect-video"
+              className={`rounded-xl bg-black overflow-hidden mx-auto shrink-0 ${
+                exportSettings.export_mode === "face_tracking" ? "aspect-[9/16] max-w-sm" : "aspect-video max-w-4xl w-full"
               }`}
             >
               {isAnalyzing ? (
@@ -167,7 +167,16 @@ export default function ProjectPage() {
                   <p>{status?.progress || "Analyzing..."}</p>
                 </div>
               ) : project.video_path ? (
-                <video ref={videoRef} src={videoUrl(id)} controls className="w-full h-full object-cover" />
+                exportSettings.export_mode === "landscape_fit" ? (
+                  <div className="relative w-full h-full">
+                    <video src={videoUrl(id)} className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-50" aria-hidden muted />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <video ref={videoRef} src={videoUrl(id)} controls className="max-h-full max-w-full object-contain rounded shadow-2xl" />
+                    </div>
+                  </div>
+                ) : (
+                  <video ref={videoRef} src={videoUrl(id)} controls className="w-full h-full object-cover" />
+                )
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-zinc-500">No video</div>
               )}
