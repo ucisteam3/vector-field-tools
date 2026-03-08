@@ -11,7 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Default export settings (from settings_manager)
 DEFAULT_EXPORT_SETTINGS = {
-    "export_mode": "landscape_fit",
+    "export_mode": "face_tracking",
     "dynamic_zoom_enabled": False,
     "video_flip_enabled": False,
     "audio_pitch_enabled": False,

@@ -20,7 +20,7 @@ export default function ProjectPage() {
   const [downloading, setDownloading] = useState<Set<number>>(new Set());
   const previewEndRef = useRef<{ index: number; end: number } | null>(null);
   const [exportSettings, setExportSettings] = useState<ExportSettings>(() => ({ ...DEFAULT_EXPORT_SETTINGS }));
-  const [settingsPanelOpen, setSettingsPanelOpen] = useState(true);
+  const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const loadProject = async () => {

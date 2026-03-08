@@ -53,7 +53,7 @@ class WebAppContext:
         from modules.settings_manager import load_settings
         self.custom_settings = load_settings()
         # Override path-dependent settings to use project-relative paths
-        self.custom_settings.setdefault("export_mode", "landscape_fit")
+        self.custom_settings.setdefault("export_mode", "face_tracking")
         self.custom_settings.setdefault("watermark_enabled", False)
         self.custom_settings.setdefault("subtitle_enabled", False)
 
