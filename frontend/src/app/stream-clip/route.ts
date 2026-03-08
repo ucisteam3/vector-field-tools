@@ -1,6 +1,6 @@
 /**
  * Proxy untuk stream clip - path tanpa .mp4 agar tidak trigger IDM saat Play.
- * Backend fetch dilakukan server-side.
+ * Tidak di bawah /api supaya tidak di-rewrite ke backend.
  */
 import { NextRequest, NextResponse } from "next/server";
 
@@ -19,13 +19,13 @@ export async function GET(req: NextRequest) {
     const blob = await res.blob();
     return new NextResponse(blob, {
       headers: {
-        "Content-Type": "video/mp4",
-        "Content-Disposition": "inline",
+        "Content-Type": "application/octet-stream",
+        "X-Content-Type": "video/mp4",
         "Cache-Control": "private, max-age=3600",
       },
     });
   } catch (e) {
-    console.error("[play-clip]", e);
+    console.error("[stream-clip]", e);
     return NextResponse.json({ error: "Failed to load clip" }, { status: 502 });
   }
 }

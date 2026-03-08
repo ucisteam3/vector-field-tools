@@ -162,9 +162,9 @@ export function clipUrl(projectId: string, clipFilename: string): string {
   return `${API}/clip/${projectId}/${clipFilename}`;
 }
 
-/** URL untuk Play - lewat proxy tanpa .mp4 di path, hindari IDM */
+/** URL untuk Play - lewat proxy /stream-clip (bukan /api) agar tidak trigger IDM */
 export function playClipUrl(projectId: string, clipFilename: string): string {
-  return `${API}/play-clip?project=${encodeURIComponent(projectId)}&file=${encodeURIComponent(clipFilename)}`;
+  return `/stream-clip?project=${encodeURIComponent(projectId)}&file=${encodeURIComponent(clipFilename)}`;
 }
 
 /**
