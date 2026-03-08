@@ -56,17 +56,18 @@ class AISegmentAnalyzer:
     OPUS_STEP_SIZE = 10
     OPUS_CLIP_MIN = 15
     OPUS_CLIP_MAX = 45
-    OPUS_TOP_CLIPS = 15
+    OPUS_TOP_CLIPS = 20
     OPUS_OVERLAP_THRESHOLD = 0.60
     HOOK_PRE_ROLL_SEC = 2  # Start clip 2s before hook moment
     HOOK_POST_ROLL_MIN = 30
     HOOK_POST_ROLL_MAX = 45
 
-    # [HOOK DETECTION] Phrases that mark viral statement moments
+    # [HOOK DETECTION] Phrases that mark viral statement moments (strong opening in first 3s)
     HOOK_MOMENT_PATTERNS = [
-        "menurut saya", "masalahnya", "yang menarik", "bukan mustahil", "justru",
-        "ternyata", "anehnya", "padahal", "saya pikir", "ini masalah",
-        "yang bikin", "yang jadi masalah", "yang bikin menarik", "ini yang bikin", "ini yang menarik",
+        "yang paling penting", "masalahnya adalah", "kenapa", "yang menarik adalah",
+        "yang mengejutkan", "faktanya", "menurut saya", "masalahnya", "yang menarik",
+        "bukan mustahil", "justru", "ternyata", "anehnya", "padahal", "saya pikir",
+        "ini masalah", "yang bikin", "yang jadi masalah", "ini yang bikin", "ini yang menarik",
     ]
 
     # [INTRO/FILLER] Skip these at clip start — move to first meaningful sentence
@@ -77,8 +78,8 @@ class AISegmentAnalyzer:
 
     # [ARGUMENT] Debate/disagreement — highly viral in podcasts
     ARGUMENT_PATTERNS = [
-        "tapi", "namun", "justru", "saya tidak setuju", "masalahnya",
-        "sebaliknya", "padahal",
+        "menurut saya", "tidak setuju", "sebenarnya", "masalahnya", "argumen",
+        "tapi", "namun", "justru", "saya tidak setuju", "sebaliknya", "padahal",
     ]
 
     # [STRONG STATEMENT] Opinion / prediction / controversy
@@ -122,6 +123,12 @@ class AISegmentAnalyzer:
             "tahu gak", "fakta tersembunyi", "rahasia besar",
         ],
     }
+    # [EMOTION] Indonesian emotion indicators (PART 4)
+    EMOTION_KEYWORDS = [
+        "marah", "lucu", "heboh", "serius", "ketat", "krisis", "mengejutkan",
+        "sedih", "terharu", "menangis", "menyentuh", "pilu", "emosi",
+    ]
+
     # Dramatic connector words - often indicate important moments
     CONNECTOR_WORDS = [
         "tapi", "namun", "justru", "tiba tiba", "yang menarik",
@@ -319,15 +326,26 @@ class AISegmentAnalyzer:
             pass
         return scores
 
-    def _compute_hook_score(self, text: str) -> float:
-        """Hook score 0-100: phrases that mark viral statements."""
+    def _compute_hook_score(self, text: str, first_3s_text: str = None) -> float:
+        """Hook score 0-100: phrases in first 3s = strong hook (PART 3)."""
         if not text or not text.strip():
             return 0.0
         t = text.lower().strip()
         score = 0.0
+        # Boost if hook phrases in first 3 seconds (~50 chars)
+        opening = (first_3s_text or t)[:80].lower()
+        strong_hooks = ["yang paling penting", "masalahnya adalah", "kenapa", "yang menarik adalah",
+                        "yang mengejutkan", "faktanya", "ternyata", "justru", "menurut saya"]
+        for p in strong_hooks:
+            if p in opening:
+                score += 25.0
+                break
+        # Rhetorical question / emotional emphasis
+        if "?" in opening and len(opening) < 60:
+            score += 15.0
         for p in self.HOOK_MOMENT_PATTERNS + self.HOOK_PATTERNS + self.HOOK_STRONG_VERBS:
             if p in t:
-                score += 20.0
+                score += 18.0
         for m in self.HUMOR_MARKERS:
             if m in t:
                 score += 15.0
@@ -342,11 +360,14 @@ class AISegmentAnalyzer:
         return min(100.0, score)
 
     def _compute_emotion_score(self, text: str) -> float:
-        """Emotion score 0-100: emotional content detection."""
+        """Emotion score 0-100: emotional content detection (PART 4 - marah, lucu, heboh, etc)."""
         if not text or not text.strip():
             return 0.0
         t = text.lower()
         score = 0.0
+        for kw in self.EMOTION_KEYWORDS:
+            if kw in t:
+                score += 18.0
         for kw in self.VIRAL_CATEGORY_KEYWORDS.get("emotional", []):
             if kw in t:
                 score += 25.0
@@ -360,15 +381,23 @@ class AISegmentAnalyzer:
         score += emo_raw * 15.0
         return min(100.0, score)
 
-    def _compute_controversy_score(self, text: str) -> float:
-        """Controversy/argument score 0-100: debate, disagreement, strong opinions."""
+    def _compute_argument_score(self, text: str) -> float:
+        """Argument score 0-100: debate-style dialogue (PART 5 - menurut saya, tidak setuju, etc)."""
         if not text or not text.strip():
             return 0.0
         t = text.lower()
         score = 0.0
         for p in self.ARGUMENT_PATTERNS:
             if p in t:
-                score += 25.0
+                score += 22.0
+        return min(100.0, score)
+
+    def _compute_controversy_score(self, text: str) -> float:
+        """Controversy score 0-100: debate, disagreement, strong opinions (distinct from argument)."""
+        if not text or not text.strip():
+            return 0.0
+        t = text.lower()
+        score = 0.0
         for s in self.STRONG_STATEMENTS:
             if s in t:
                 score += 20.0
@@ -517,12 +546,15 @@ class AISegmentAnalyzer:
         return 0
 
     def _slice_transcript_by_time(self, formatted_transcript, start_sec, end_sec):
-        """Return transcript text for lines whose timestamp falls in [start_sec, end_sec]. Keeps [MM:SS] format."""
+        """Return transcript text for lines whose timestamp falls in [start_sec, end_sec]. Supports [MM:SS] or H:MM:SS."""
+        if not formatted_transcript:
+            return ""
         lines = []
         for line in formatted_transcript.split("\n"):
             line = line.strip()
             if not line:
                 continue
+            t_sec = None
             match = re.match(r"\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]", line)
             if match:
                 g = match.groups()
@@ -530,8 +562,13 @@ class AISegmentAnalyzer:
                     t_sec = int(g[0]) * 3600 + int(g[1]) * 60 + int(g[2])
                 else:
                     t_sec = int(g[0]) * 60 + int(g[1])
-                if start_sec <= t_sec <= end_sec:
-                    lines.append(line)
+            else:
+                match2 = re.match(r"^(?:(\d+):)?(\d{1,2}):(\d{2})(?::(\d{2}))?\s", line)
+                if match2:
+                    h, m, s = match2.groups()
+                    t_sec = (int(h or 0) * 3600) + int(m) * 60 + int(s)
+            if t_sec is not None and start_sec <= t_sec <= end_sec:
+                lines.append(line)
         return "\n".join(lines) if lines else ""
 
     def _get_timestamped_sentences(self):
@@ -639,6 +676,11 @@ class AISegmentAnalyzer:
             return v
         except (TypeError, ValueError):
             return 0.0
+
+    def _get_transcript_for_range_from_cues(self, start_sec: float, end_sec: float) -> str:
+        """Extract transcript from sub_transcriptions for [start_sec, end_sec]. For sliding window."""
+        cues = getattr(self.parent, "sub_transcriptions", None)
+        return self._get_transcript_for_clip_range(start_sec, end_sec, cues) if cues else ""
 
     def _get_transcript_for_clip_range(self, clip_start: float, clip_end: float, cues: dict) -> str:
         """
