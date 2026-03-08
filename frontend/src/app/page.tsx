@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Youtube, Plus, Film, Calendar, Loader2, ExternalLink, Trash2, ShieldCheck, Upload } from "lucide-react";
-import { analyzeVideo, getProjects, getProjectStatus, deleteProject, videoUrl, uploadCookies, getCookiesStatus, type Project } from "@/lib/api";
+import { analyzeVideo, getProjects, getProjectStatus, deleteProject, retryProject, videoUrl, uploadCookies, getCookiesStatus, type Project } from "@/lib/api";
 
 export default function HomePage() {
   const [url, setUrl] = useState("");
@@ -13,6 +13,7 @@ export default function HomePage() {
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState<string | null>(null);
   const [statusCache, setStatusCache] = useState<Record<string, { progress?: string; eta_message?: string }>>({});
   const [cookiesStatus, setCookiesStatus] = useState<{ exists: boolean; size_kb: number } | null>(null);
   const [uploadingCookies, setUploadingCookies] = useState(false);

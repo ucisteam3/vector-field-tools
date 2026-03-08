@@ -50,7 +50,7 @@ from backend.project_manager import (
     get_video_path,
     PROJECTS_DIR,
 )
-from backend.analysis_service import run_analysis, get_analysis_status
+from backend.analysis_service import run_analysis, get_analysis_status, _safe_str
 from backend.clip_service import export_clip, export_all_clips
 
 app = FastAPI(title="AI Video Clipper", version="1.0")
@@ -104,10 +104,25 @@ def analyze(req: AnalyzeRequest):
     return {"project_id": project_id, "title": title}
 
 
+def _sanitize_project(meta: dict) -> dict:
+    """Ensure error/title/clips are safe for Windows encoding (no Unicode arrows etc)."""
+    out = dict(meta)
+    if out.get("error"):
+        out["error"] = _safe_str(out["error"])
+    if out.get("title"):
+        out["title"] = _safe_str(out["title"])
+    if out.get("clips"):
+        out["clips"] = [
+            {**c, "title": _safe_str(c.get("title", ""))}
+            for c in out["clips"]
+        ]
+    return out
+
+
 @app.get("/projects")
 def projects_list():
     """List all projects."""
-    return list_projects()
+    return [_sanitize_project(p) for p in list_projects()]
 
 
 @app.get("/project/{project_id}")
@@ -116,13 +131,31 @@ def project_detail(project_id: str):
     meta = get_project(project_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Project not found")
-    return meta
+    return _sanitize_project(meta)
 
 
 @app.get("/project/{project_id}/status")
 def project_status(project_id: str):
     """Get analysis status (for polling during processing)."""
-    return get_analysis_status(project_id)
+    st = get_analysis_status(project_id)
+    if st.get("error"):
+        st = dict(st)
+        st["error"] = _safe_str(st["error"])
+    return st
+
+
+@app.post("/project/{project_id}/retry")
+def project_retry(project_id: str):
+    """Retry analysis for a failed project. Uses stored youtube_url."""
+    meta = get_project(project_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="Project not found")
+    url = meta.get("youtube_url")
+    if not url:
+        raise HTTPException(status_code=400, detail="No YouTube URL for this project")
+    update_project(project_id, status="analyzing", error=None)
+    run_analysis(project_id, url)
+    return {"ok": True}
 
 
 @app.get("/video/{project_id}")

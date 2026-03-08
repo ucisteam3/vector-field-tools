@@ -15,6 +15,11 @@ export async function deleteProject(projectId: string): Promise<void> {
   if (!res.ok) throw new Error(await res.text());
 }
 
+export async function retryProject(projectId: string): Promise<void> {
+  const res = await fetch(`${API}/project/${projectId}/retry`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text());
+}
+
 export async function getProjects(): Promise<Project[]> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
