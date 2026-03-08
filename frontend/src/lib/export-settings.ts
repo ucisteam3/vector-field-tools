@@ -1,6 +1,6 @@
 /** Export settings matching backend ClipExporter / settings_manager */
 
-export type ExportMode = "landscape_fit" | "face_tracking";
+export type ExportMode = "landscape_fit" | "face_tracking" | "podcast_smart";
 
 export type ExportSettings = {
   export_mode: ExportMode;
@@ -71,4 +71,5 @@ export const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
 export const EXPORT_MODE_OPTIONS: { value: ExportMode; label: string }[] = [
   { value: "face_tracking", label: "9:16 Portrait (Shorts/Reels)" },
   { value: "landscape_fit", label: "Landscape (Blur Background)" },
+  { value: "podcast_smart", label: "Podcast Smart (Active Speaker)" },
 ];
