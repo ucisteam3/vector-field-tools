@@ -15,12 +15,13 @@ import {
   type Project,
 } from "@/lib/api";
 import { useAppSettings } from "@/lib/settings-store";
+import { EXPORT_MODE_OPTIONS } from "@/lib/export-settings";
 import AppSidebar from "@/components/AppSidebar";
 
 export default function ProjectPage() {
   const params = useParams();
   const id = params?.id as string;
-  const [exportSettings] = useAppSettings();
+  const [exportSettings, setExportSettings] = useAppSettings();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<{ status: string; progress?: string } | null>(null);
@@ -138,9 +139,27 @@ export default function ProjectPage() {
       <AppSidebar />
       <main className="flex-1 ml-64 p-6 flex flex-col min-h-0 overflow-auto">
         <div className="flex flex-col flex-1 min-h-0">
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-cyan-400" /> Viral clips ({clips.length})
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-cyan-400" /> Viral clips ({clips.length})
+            </h2>
+            {!isAnalyzing && (
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-zinc-500">Mode</label>
+                <select
+                  value={exportSettings.export_mode}
+                  onChange={(e) => setExportSettings((s) => ({ ...s, export_mode: e.target.value as typeof s.export_mode }))}
+                  className="bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-cyan-500/50 outline-none"
+                >
+                  {EXPORT_MODE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
           {isAnalyzing ? (
             <div className="flex items-center gap-3 text-zinc-500">
               <Loader2 className="w-5 h-5 animate-spin text-cyan-400" />
