@@ -165,17 +165,16 @@ export default function ProjectPage() {
                         />
                       ) : (
                         <video
-                          ref={(el) => {
-                            playingVideoRef.current = el;
-                            if (el) {
-                              el.currentTime = clip.start;
-                              el.play().catch(() => {});
-                            }
-                          }}
+                          ref={playingVideoRef}
                           src={videoUrl(id)}
                           controls
                           playsInline
                           className="w-full h-full object-cover"
+                          onLoadedMetadata={(e) => {
+                            const v = e.currentTarget;
+                            v.currentTime = clip.start;
+                            v.play().catch(() => {});
+                          }}
                           onTimeUpdate={handleClipTimeUpdate(clip.end)}
                           onEnded={() => setPlayingClip(null)}
                         />
