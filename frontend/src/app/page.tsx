@@ -6,6 +6,12 @@ import { motion } from "framer-motion";
 import { Youtube, Plus, Film, Calendar, Loader2, ExternalLink, Trash2, ShieldCheck, Upload } from "lucide-react";
 import AppSidebar from "@/components/AppSidebar";
 import { analyzeVideo, getProjects, getProjectStatus, deleteProject, retryProject, videoUrl, uploadCookies, getCookiesStatus, type Project } from "@/lib/api";
+
+function getYoutubeThumbnail(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+  return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : null;
+}
 import { useAppSettings } from "@/lib/settings-store";
 
 export default function HomePage() {
@@ -144,7 +150,7 @@ export default function HomePage() {
           </p>
           <div className="flex flex-col gap-4">
             <div className="flex gap-3">
-            <div className="flex-1 flex items-center gap-2 bg-zinc-800/50 border border-zinc-600 rounded-xl px-4 py-3">
+            <div className="flex-1 flex items-center gap-2 bg-zinc-800/50 border border-zinc-600 rounded-xl px-4 py-3" suppressHydrationWarning>
               <Youtube className="w-5 h-5 text-red-500 flex-shrink-0" />
               <input
                 type="url"
@@ -153,6 +159,7 @@ export default function HomePage() {
                 onChange={(e) => setUrl(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
                 className="bg-transparent flex-1 outline-none text-white placeholder:text-zinc-500"
+                autoComplete="off"
               />
             </div>
             <button
@@ -244,51 +251,57 @@ export default function HomePage() {
                   <div className="flex items-center gap-4 rounded-xl border border-zinc-700 bg-zinc-800/50 px-4 py-3 hover:bg-zinc-700/50 transition-colors group">
                     <Link href={`/project/${p.project_id}`} className="flex flex-1 items-center gap-4 min-w-0">
                       <div className="w-24 h-14 flex-shrink-0 rounded-lg overflow-hidden bg-zinc-900 relative">
-                        {p.video_path && p.status === "ready" ? (
-                          <img
-                            src={videoUrl(p.project_id)}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex flex-col items-center justify-center gap-0.5 p-1">
-                            {p.status === "analyzing" ? (
-                              <>
-                                <Loader2 className="w-5 h-5 animate-spin text-cyan-400 flex-shrink-0" />
-                                <span className="text-[9px] text-cyan-400 font-medium leading-tight text-center truncate w-full">
-                                  {(() => {
-                                    const prog = statusCache[p.project_id]?.progress || "Loading...";
-                                    const m = prog.match(/([\d.]+)\s*%/);
-                                    return m ? `${m[1]}%` : prog.replace(/\.\.\.?\s*$/, "");
-                                  })()}
-                                </span>
-                                {statusCache[p.project_id]?.eta_message && (
-                                  <span className="text-[8px] text-zinc-500">
-                                    ETA {statusCache[p.project_id].eta_message}
+                        {(() => {
+                          const thumbUrl = getYoutubeThumbnail(p.youtube_url) ?? (p.video_path && p.status === "ready" ? videoUrl(p.project_id) : null);
+                          return (
+                            <>
+                              {thumbUrl ? (
+                                <img
+                                  src={thumbUrl}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center gap-0.5 p-1">
+                                  <Film className="w-8 h-8 text-zinc-600" />
+                                </div>
+                              )}
+                              {p.status === "analyzing" && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 p-1 bg-black/70">
+                                  <Loader2 className="w-5 h-5 animate-spin text-cyan-400 flex-shrink-0" />
+                                  <span className="text-[9px] text-cyan-400 font-medium leading-tight text-center truncate w-full">
+                                    {(() => {
+                                      const prog = statusCache[p.project_id]?.progress || "Loading...";
+                                      const m = prog.match(/([\d.]+)\s*%/);
+                                      return m ? `${m[1]}%` : prog.replace(/\.\.\.?\s*$/, "");
+                                    })()}
                                   </span>
-                                )}
-                                {(() => {
-                                  const prog = statusCache[p.project_id]?.progress || "";
-                                  const m = prog.match(/([\d.]+)\s*%/);
-                                  const pct = m ? parseFloat(m[1]) : 0;
-                                  if (pct > 0 && pct < 100) {
-                                    return (
-                                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-700">
-                                        <div
-                                          className="h-full bg-cyan-500 transition-all duration-500"
-                                          style={{ width: `${pct}%` }}
-                                        />
-                                      </div>
-                                    );
-                                  }
-                                  return null;
-                                })()}
-                              </>
-                            ) : (
-                              <Film className="w-8 h-8 text-zinc-600" />
-                            )}
-                          </div>
-                        )}
+                                  {statusCache[p.project_id]?.eta_message && (
+                                    <span className="text-[8px] text-zinc-500">
+                                      ETA {statusCache[p.project_id].eta_message}
+                                    </span>
+                                  )}
+                                  {(() => {
+                                    const prog = statusCache[p.project_id]?.progress || "";
+                                    const m = prog.match(/([\d.]+)\s*%/);
+                                    const pct = m ? parseFloat(m[1]) : 0;
+                                    if (pct > 0 && pct < 100) {
+                                      return (
+                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-700">
+                                          <div
+                                            className="h-full bg-cyan-500 transition-all duration-500"
+                                            style={{ width: `${pct}%` }}
+                                          />
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
                       <div className="flex-1 min-w-0">
                         <h3 className="font-medium truncate">{p.title || "Untitled"}</h3>
@@ -308,7 +321,7 @@ export default function HomePage() {
                             <span>{p.clips?.length ?? 0} clips</span>
                           )}
                           <span>·</span>
-                          <span className="flex items-center gap-1 flex-shrink-0">
+                          <span className="flex items-center gap-1 flex-shrink-0" suppressHydrationWarning>
                             <Calendar className="w-3.5 h-3.5" />
                             {new Date(p.updated_at).toLocaleDateString()}
                           </span>
@@ -355,4 +368,12 @@ export default function HomePage() {
                       )}
                     </button>
                   </div>
-                </motio
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </section>
+      </main>
+    </div>
+  );
+}
