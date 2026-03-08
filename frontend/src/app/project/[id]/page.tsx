@@ -257,9 +257,12 @@ export default function ProjectPage() {
                     transition={{ delay: i * 0.05 }}
                     className="rounded-xl border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition-colors"
                   >
-                    <h3 className="font-medium text-sm line-clamp-2 mb-2">{clip.title}</h3>
+                    <h3 className="font-medium text-sm line-clamp-2 mb-2">
+                      <span className="text-amber-400">🔥</span> {clip.title}
+                    </h3>
                     <div className="flex items-center gap-2 text-xs text-zinc-500 mb-3">
-                      <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400">{clip.score} score</span>
+                      <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400">score {clip.score}</span>
+                      <span>|</span>
                       <span>{formatTime(clip.duration)}</span>
                     </div>
                     <div className="flex flex-wrap gap-2">

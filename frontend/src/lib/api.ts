@@ -127,6 +127,7 @@ export async function getFonts(): Promise<string[]> {
 }
 
 export type Clip = {
+  id?: number;
   start: number;
   end: number;
   duration: number;

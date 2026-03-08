@@ -233,6 +233,10 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None):
                         transcriptions = ctx.extract_audio_and_transcribe(str(video_dest))
                     if transcriptions:
                         ctx.sub_transcriptions = transcriptions
+                else:
+                    transcriptions = ctx.sub_transcriptions or ctx.parse_manual_transcript(manual_text)
+                    if transcriptions and not ctx.sub_transcriptions:
+                        ctx.sub_transcriptions = transcriptions
 
                 if transcriptions:
                     from modules.ai_engine import AIEngine
