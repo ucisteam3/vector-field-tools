@@ -58,16 +58,21 @@ app = FastAPI(title="AI Video Clipper", version="1.0")
 
 
 def _log_gpu_status():
-    """Log GPU/CUDA availability at startup."""
+    """Log GPU/CUDA availability and configure for ~90% utilization."""
     try:
         import torch
         if torch.cuda.is_available():
             name = torch.cuda.get_device_name(0) if torch.cuda.device_count() else "NVIDIA GPU"
-            print(f"[GPU] CUDA tersedia: {name} - Whisper & ML models akan menggunakan GPU")
+            torch.cuda.set_per_process_memory_fraction(0.9)
+            if hasattr(torch.backends, "cudnn") and hasattr(torch.backends.cudnn, "benchmark"):
+                torch.backends.cudnn.benchmark = True
+            print(f"[GPU] CUDA: {name} - 90% VRAM, optimasi kecepatan aktif")
         else:
-            print("[GPU] CUDA tidak terdeteksi - menggunakan CPU (pastikan PyTorch+CUDA terinstall)")
+            print("[GPU] CUDA tidak terdeteksi - menggunakan CPU")
     except ImportError:
-        print("[GPU] PyTorch tidak terinstall - GPU tidak tersedia")
+        print("[GPU] PyTorch tidak terinstall")
+    except Exception as e:
+        print(f"[GPU] Config: {e}")
 
 
 _log_gpu_status()

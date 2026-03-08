@@ -274,11 +274,9 @@ def generate_karaoke_ass(audio_path, output_ass_path, settings):
         model = get_cached_whisper_model(model_name, device, download_root=models_root)
         
         print(f"[SUBTITLE] Transcribing {audio_path} for karaoke...")
-        # Transcribe with word timestamps & language hint
-        # Force Indonesian if possible to avoid English hallucinations, 
-        # but better to let it detect or default. The 'medium' model is usually smart enough.
-        # We add beam_size to improve search.
-        result = model.transcribe(str(audio_path), word_timestamps=True, beam_size=5)
+        result = model.transcribe(
+            str(audio_path), word_timestamps=True, beam_size=5, fp16=(device == "cuda")
+        )
         
         # Prepare ASS Header
         font = settings.get("subtitle_font", "Arial")

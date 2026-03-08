@@ -106,7 +106,7 @@ class TranscriptionEngine:
             else:
                 print("  [WHISPER] Memproses di CPU (20-50% durasi video)...")
             
-            result = model.transcribe(str(audio_path), verbose=False)
+            result = model.transcribe(str(audio_path), verbose=False, fp16=(device == "cuda"))
             full_text = result["text"]
             
             print(f"  [WHISPER] Selesai! {len(full_text)} karakter terdeteksi.")
@@ -146,9 +146,9 @@ class TranscriptionEngine:
             os.makedirs(models_root, exist_ok=True)
             if self.parent and hasattr(self.parent, "progress_var"):
                 self.parent.progress_var.set(f"Whisper ({device}): Transcribing...")
-            print(f"  [WHISPER] Using '{model_name}' on {device}")
+            print(f"  [WHISPER] Using '{model_name}' on {device} (fp16)")
             model = self._get_whisper_model(model_name, device, download_root=models_root)
-            result = model.transcribe(str(audio_path), verbose=False)
+            result = model.transcribe(str(audio_path), verbose=False, fp16=(device == "cuda"))
             try:
                 audio_path.unlink(missing_ok=True)
             except Exception:

@@ -869,10 +869,10 @@ class ClipExporter:
                 ])
 
                 if encoder == "gpu":
-                    # NVENC (NVIDIA) settings with quality control
+                    # NVENC (NVIDIA) - p1 = fastest, max GPU throughput
                     base_cmd.extend([
                         '-c:v', 'h264_nvenc',
-                        '-preset', 'p4',           # Fast preset
+                        '-preset', 'p1',           # Fastest preset (90% GPU util)
                         '-cq', '23',               # Quality (18-28, lower=better)
                         '-b:v', '8M',              # Max video bitrate 8 Mbps
                         '-maxrate', '10M',         # Peak bitrate
