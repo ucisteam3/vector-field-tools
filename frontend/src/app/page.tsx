@@ -51,7 +51,7 @@ export default function HomePage() {
   const analyzingIds = projects.filter((p) => p.status === "analyzing").map((p) => p.project_id);
   useEffect(() => {
     if (analyzingIds.length === 0) return;
-    const t = setInterval(async () => {
+    const fetchStatus = async () => {
       for (const id of analyzingIds) {
         try {
           const st = await getProjectStatus(id);
@@ -66,7 +66,9 @@ export default function HomePage() {
           /* ignore */
         }
       }
-    }, 2000);
+    };
+    fetchStatus(); // Fetch immediately, don't wait 2s
+    const t = setInterval(fetchStatus, 2000);
     return () => clearInterval(t);
   }, [analyzingIds.join(","), loadProjects]);
 

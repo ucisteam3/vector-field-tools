@@ -118,7 +118,7 @@ def _compute_eta(progress: str) -> tuple[int, str]:
 
 def get_analysis_status(project_id: str) -> dict:
     with _analysis_lock:
-        s = _analysis_status.get(project_id, {"status": "idle", "progress": ""}).copy()
+        s = _analysis_status.get(project_id, {"status": "idle", "progress": "Memulai..."}).copy()
         if s.get("status") == "analyzing" and s.get("progress"):
             eta_secs, eta_msg = _compute_eta(s["progress"])
             s["eta_seconds"] = eta_secs
@@ -128,6 +128,8 @@ def get_analysis_status(project_id: str) -> dict:
 
 def run_analysis(project_id: str, youtube_url: str, on_progress=None):
     """Run full analysis in background. Updates project metadata on completion."""
+    _set_status(project_id, "analyzing", "Starting...")
+
     def _run():
         _ensure_sys_path()
         try:
