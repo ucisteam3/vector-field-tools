@@ -230,83 +230,98 @@ export default function ProjectPage() {
             </AnimatePresence>
           </div>
 
-          <div className="w-80 flex-shrink-0 flex flex-col">
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-cyan-400" /> Viral clips ({clips.length})
             </h2>
-            <div className="flex-1 overflow-y-auto space-y-3 pr-2">
-              {isAnalyzing && (
-                <p className="text-zinc-500 text-sm">Clips will appear when analysis is complete.</p>
-              )}
-              {!isAnalyzing &&
-                clips.map((clip, i) => (
+            {isAnalyzing ? (
+              <p className="text-zinc-500 text-sm">Clips will appear when analysis is complete.</p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 overflow-y-auto pb-4">
+                {clips.map((clip, i) => (
                   <motion.div
                     key={i}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="rounded-xl border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition-colors"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.03 }}
+                    className="rounded-xl border border-white/10 bg-white/5 overflow-hidden hover:bg-white/10 transition-colors group"
                   >
-                    <h3 className="font-medium text-sm line-clamp-2 mb-2">
-                      <span className="text-amber-400">🔥</span> {clip.title}
-                    </h3>
-                    <div className="flex items-center gap-2 text-xs text-zinc-500 mb-3">
-                      <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400">score {clip.score}</span>
-                      <span>|</span>
-                      <span>{formatTime(clip.duration)}</span>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => previewClip(i)}
-                        title="Preview in main video"
-                        className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-zinc-700/50 hover:bg-zinc-600/50 text-zinc-300 text-sm"
-                      >
-                        <Play className="w-4 h-4" /> Preview
-                      </button>
+                    <div
+                      className={`relative cursor-pointer ${
+                        exportSettings.export_mode === "face_tracking" ? "aspect-[9/16]" : "aspect-video"
+                      } bg-zinc-900`}
+                      onClick={() => playClip(clip, i)}
+                    >
                       {clip.clip_path ? (
-                        <>
-                          <button
-                            onClick={() => playClip(clip, i)}
-                            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 text-sm"
-                          >
-                            <Play className="w-4 h-4" /> Play
-                          </button>
+                        <video
+                          src={clipUrl(id, clip.clip_path.replace("clips/", ""))}
+                          className="w-full h-full object-cover"
+                          muted
+                          preload="metadata"
+                          playsInline
+                        />
+                      ) : (
+                        <video
+                          src={videoUrl(id)}
+                          className="w-full h-full object-cover"
+                          muted
+                          preload="metadata"
+                          playsInline
+                          onLoadedMetadata={(e) => { (e.target as HTMLVideoElement).currentTime = clip.start; }}
+                        />
+                      )}
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="w-14 h-14 rounded-full bg-cyan-500/80 flex items-center justify-center">
+                          <Play className="w-7 h-7 text-white ml-1" fill="currentColor" />
+                        </div>
+                      </div>
+                      <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/70 text-xs text-white">
+                        {formatTime(clip.duration)}
+                      </div>
+                      <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-cyan-500/80 text-xs font-medium text-black">
+                        {clip.score}
+                      </div>
+                    </div>
+                    <div className="p-2">
+                      <h3 className="text-sm font-medium line-clamp-2 mb-2 text-zinc-200">{clip.title}</h3>
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); playClip(clip, i); }}
+                          className="flex items-center gap-1 px-2 py-1 rounded bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 text-xs"
+                        >
+                          <Play className="w-3 h-3" /> Play
+                        </button>
+                        {clip.clip_path ? (
                           <a
                             href={clipUrl(id, clip.clip_path.replace("clips/", ""))}
                             download
-                            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-sm"
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex items-center gap-1 px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-xs"
                           >
-                            <Download className="w-4 h-4" /> Download
+                            <Download className="w-3 h-3" />
                           </a>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => handleDownloadExtract(i, clip.title)}
-                          disabled={downloading.has(i)}
-                          className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-sm disabled:opacity-50"
-                        >
-                          {downloading.has(i) ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <><Download className="w-4 h-4" /> Download</>
-                          )}
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleExportWithSettings(i)}
-                        disabled={exporting.has(i)}
-                        className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors text-sm disabled:opacity-50"
-                      >
-                        {exporting.has(i) ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
                         ) : (
-                          <><Settings2 className="w-4 h-4" /> Export</>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDownloadExtract(i, clip.title); }}
+                            disabled={downloading.has(i)}
+                            className="flex items-center gap-1 px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-xs disabled:opacity-50"
+                          >
+                            {downloading.has(i) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                          </button>
                         )}
-                      </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleExportWithSettings(i); }}
+                          disabled={exporting.has(i)}
+                          className="flex items-center gap-1 px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-xs disabled:opacity-50"
+                        >
+                          {exporting.has(i) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Settings2 className="w-3 h-3" />}
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 ))}
-            </div>
+              </div>
+            )}
           </div>
 
         </div>

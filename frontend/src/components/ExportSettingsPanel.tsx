@@ -15,6 +15,8 @@ type Props = {
   onChange: (s: ExportSettings) => void;
   /** When true, renders as standalone block for /settings page (no aside wrapper) */
   standalone?: boolean;
+  /** Called when user clicks Simpan (standalone only) */
+  onSave?: () => void;
 };
 
 function Section({
@@ -407,12 +409,25 @@ export default function ExportSettingsPanel({ settings, onChange, standalone = f
           </div>
         </Section>
 
-        <button
-          onClick={() => onChange({ ...DEFAULT_EXPORT_SETTINGS })}
-          className="mt-4 w-full py-2 rounded-lg border border-zinc-600 text-zinc-400 hover:text-white hover:border-zinc-500 text-sm transition-colors"
-        >
-          Reset to defaults
-        </button>
+        <div className="mt-4 flex gap-2">
+          {standalone && (
+            <button
+              onClick={() => {
+                onChange({ ...settings });
+                onSave?.();
+              }}
+              className="flex-1 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-medium text-sm transition-colors"
+            >
+              Simpan
+            </button>
+          )}
+          <button
+            onClick={() => onChange({ ...DEFAULT_EXPORT_SETTINGS })}
+            className={`py-2 rounded-lg border border-zinc-600 text-zinc-400 hover:text-white hover:border-zinc-500 text-sm transition-colors ${standalone ? "flex-1" : "w-full"}`}
+          >
+            Reset to defaults
+          </button>
+        </div>
       </div>
   );
 
