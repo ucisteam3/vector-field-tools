@@ -115,7 +115,7 @@ export default function ProjectPage() {
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.03 }}
-                  className="rounded-xl border border-white/10 bg-white/5 overflow-hidden hover:bg-white/10 transition-colors group"
+                  className="rounded-lg border border-white/10 bg-white/5 overflow-hidden hover:bg-white/10 transition-colors group"
                 >
                   <div className="relative aspect-[9/16] bg-zinc-900">
                     {playingClip === i && blobCache[i] ? (
@@ -129,13 +129,13 @@ export default function ProjectPage() {
                       />
                     ) : playingClip === i ? (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/60">
-                        <Loader2 className="w-12 h-12 animate-spin text-cyan-400" />
+                        <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
                       </div>
                     ) : (
                       <>
                         {clip.clip_path ? (
                           <div className="w-full h-full bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center">
-                            <Play className="w-16 h-16 text-white/30" />
+                            <Play className="w-10 h-10 text-white/30" />
                           </div>
                         ) : (
                           <div className="absolute inset-0 flex items-center justify-center bg-zinc-800">
@@ -152,37 +152,37 @@ export default function ProjectPage() {
                             </div>
                           </div>
                         )}
-                        <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/70 text-xs text-white">
+                        <div className="absolute bottom-0.5 right-0.5 px-1 py-0.5 rounded bg-black/70 text-[10px] text-white">
                           {formatTime(clip.duration)}
                         </div>
-                        <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-cyan-500/80 text-xs font-medium text-black">
+                        <div className="absolute top-0.5 left-0.5 px-1 py-0.5 rounded bg-cyan-500/80 text-[10px] font-medium text-black">
                           {clip.score}
                         </div>
                       </>
                     )}
                   </div>
-                  <div className="p-2">
-                    <h3 className="text-sm font-medium line-clamp-2 mb-2 text-zinc-200">{clip.title}</h3>
-                    <div className="flex flex-wrap gap-1">
+                  <div className="p-1.5">
+                    <h3 className="text-[11px] font-medium line-clamp-2 mb-1 text-zinc-200">{clip.title}</h3>
+                    <div className="flex flex-wrap gap-0.5">
                       {clip.clip_path ? (
                         <>
                           <button
                             onClick={() => playClip(i)}
-                            className="flex items-center gap-1 px-2 py-1 rounded bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 text-xs"
+                            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 text-[10px]"
                           >
-                            <Play className="w-3 h-3" /> Play
+                            <Play className="w-2.5 h-2.5" /> Play
                           </button>
                           <a
                             href={clipUrl(id, clip.clip_path.replace("clips/", "")) + "?download=1"}
                             download
                             onClick={(e) => e.stopPropagation()}
-                            className="flex items-center gap-1 px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-xs"
+                            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[10px]"
                           >
-                            <Download className="w-3 h-3" /> Download
+                            <Download className="w-2.5 h-2.5" /> Download
                           </a>
                         </>
                       ) : (
-                        <span className="text-xs text-zinc-500">Preparing...</span>
+                        <span className="text-[10px] text-zinc-500">Preparing...</span>
                       )}
                     </div>
                   </div>
