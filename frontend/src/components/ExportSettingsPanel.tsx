@@ -77,7 +77,7 @@ function Checkbox({
   );
 }
 
-export default function ExportSettingsPanel({ settings, onChange, standalone = false }: Props) {
+export default function ExportSettingsPanel({ settings, onChange, standalone = false, onSave }: Props) {
   const [fonts, setFonts] = useState<string[]>(["Arial"]);
   const [bgmUploading, setBgmUploading] = useState(false);
   const [watermarkUploading, setWatermarkUploading] = useState(false);
