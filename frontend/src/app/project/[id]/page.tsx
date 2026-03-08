@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Play, Download, Loader2, Sparkles } from "lucide-react";
-import { getProject, getProjectStatus, clipUrl, playClipUrl, type Project } from "@/lib/api";
+import { getProject, getProjectStatus, playClipUrl, type Project } from "@/lib/api";
 import AppSidebar from "@/components/AppSidebar";
 
 export default function ProjectPage() {
@@ -66,6 +66,28 @@ export default function ProjectPage() {
       setBlobCache((prev) => ({ ...prev, [index]: blobUrl }));
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleDownload = async (e: React.MouseEvent, index: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const clip = project?.clips?.[index];
+    if (!clip?.clip_path) return;
+    const filename = clip.clip_path.replace("clips/", "");
+    try {
+      const url = playClipUrl(id, filename);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to load");
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = (clip.title || `clip_${index + 1}`).replace(/[^a-zA-Z0-9 _-]/g, "").trim().slice(0, 50) + ".mp4";
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -173,14 +195,13 @@ export default function ProjectPage() {
                           >
                             <Play className="w-2.5 h-2.5" /> Play
                           </button>
-                          <a
-                            href={clipUrl(id, clip.clip_path.replace("clips/", "")) + "?download=1"}
-                            download
-                            onClick={(e) => e.stopPropagation()}
+                          <button
+                            type="button"
+                            onClick={(e) => handleDownload(e, i)}
                             className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[10px]"
                           >
                             <Download className="w-2.5 h-2.5" /> Download
-                          </a>
+                          </button>
                         </>
                       ) : (
                         <span className="text-[10px] text-zinc-500">Preparing...</span>

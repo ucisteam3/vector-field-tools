@@ -20,7 +20,6 @@ export async function GET(req: NextRequest) {
     return new NextResponse(blob, {
       headers: {
         "Content-Type": "application/octet-stream",
-        "X-Content-Type": "video/mp4",
         "Cache-Control": "private, max-age=3600",
       },
     });
