@@ -185,12 +185,17 @@ export function previewClipUrl(projectId: string, clipIndex: number): string {
   return `${API}/clip/${projectId}/preview/${clipIndex}`;
 }
 
-/** Fetch preview (9:16) as blob URL for inline playback. */
+/** URL untuk Play - lewat proxy /stream-preview (bukan /api) agar tidak trigger IDM. Cepat (extract -c copy). */
+export function streamPreviewUrl(projectId: string, clipIndex: number): string {
+  return `/stream-preview?project=${encodeURIComponent(projectId)}&index=${clipIndex}`;
+}
+
+/** Fetch preview via stream-preview proxy - hindari IDM, putar lebih cepat (extract). */
 export async function fetchPreviewAsBlobUrl(
   projectId: string,
   clipIndex: number
 ): Promise<string> {
-  const url = previewClipUrl(projectId, clipIndex);
+  const url = streamPreviewUrl(projectId, clipIndex);
   const res = await fetch(url);
   if (!res.ok) throw new Error("Failed to load preview");
   const blob = await res.blob();
