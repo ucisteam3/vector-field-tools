@@ -13,6 +13,8 @@ import { getFonts, uploadBgm, uploadWatermarkImage } from "@/lib/api";
 type Props = {
   settings: ExportSettings;
   onChange: (s: ExportSettings) => void;
+  /** When true, renders inside left sidebar without outer aside wrapper */
+  embedded?: boolean;
 };
 
 function Section({
@@ -73,7 +75,7 @@ function Checkbox({
   );
 }
 
-export default function ExportSettingsPanel({ settings, onChange }: Props) {
+export default function ExportSettingsPanel({ settings, onChange, embedded = false }: Props) {
   const [fonts, setFonts] = useState<string[]>(["Arial"]);
   const [bgmUploading, setBgmUploading] = useState(false);
   const [watermarkUploading, setWatermarkUploading] = useState(false);
@@ -101,15 +103,8 @@ export default function ExportSettingsPanel({ settings, onChange }: Props) {
     }
   };
 
-  return (
-    <aside className="w-80 flex-shrink-0 sticky right-0 top-0 border-l border-zinc-700 bg-zinc-900/50 flex flex-col self-stretch shadow-[-4px_0_20px_rgba(0,0,0,0.3)]">
-      <div className="p-4 border-b border-zinc-700">
-        <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-400">
-          <Settings className="w-5 h-5" />
-          Export Settings
-        </h2>
-      </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-0">
+  const content = (
+    <div className={embedded ? "flex-1 min-h-0 overflow-y-auto p-3 space-y-0" : "flex-1 overflow-y-auto p-4 space-y-0"}>
         {/* Export Mode */}
         <Section title="Export Mode" defaultOpen>
           <div>
@@ -419,6 +414,20 @@ export default function ExportSettingsPanel({ settings, onChange }: Props) {
           Reset to defaults
         </button>
       </div>
+  );
+
+  if (embedded) {
+    return content;
+  }
+  return (
+    <aside className="w-80 flex-shrink-0 sticky right-0 top-0 border-l border-zinc-700 bg-zinc-900/50 flex flex-col self-stretch shadow-[-4px_0_20px_rgba(0,0,0,0.3)]">
+      <div className="p-4 border-b border-zinc-700">
+        <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-400">
+          <Settings className="w-5 h-5" />
+          Export Settings
+        </h2>
+      </div>
+      {content}
     </aside>
   );
 }

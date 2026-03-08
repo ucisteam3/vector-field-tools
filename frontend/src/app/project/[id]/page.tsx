@@ -20,7 +20,7 @@ export default function ProjectPage() {
   const [downloading, setDownloading] = useState<Set<number>>(new Set());
   const previewEndRef = useRef<{ index: number; end: number } | null>(null);
   const [exportSettings, setExportSettings] = useState<ExportSettings>(() => ({ ...DEFAULT_EXPORT_SETTINGS }));
-  const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
+  const [settingsPanelOpen, setSettingsPanelOpen] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const loadProject = async () => {
@@ -153,13 +153,13 @@ export default function ProjectPage() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <aside className="w-64 border-r border-white/10 bg-black/30 fixed left-0 top-0 bottom-0 flex flex-col z-20">
+      <aside className={`border-r border-white/10 bg-black/30 fixed left-0 top-0 bottom-0 flex flex-col z-20 transition-all duration-200 ${settingsPanelOpen ? "w-80" : "w-64"}`}>
         <div className="p-6">
           <Link href="/" className="flex items-center gap-2 text-xl font-bold text-cyan-400">
             <Film className="w-8 h-8" /> AI Clipper
           </Link>
         </div>
-        <nav className="flex-1 px-4 space-y-1">
+        <nav className="px-4 space-y-1 flex-shrink-0">
           <Link href="/" className="flex items-center gap-2 px-4 py-3 rounded-lg text-zinc-400 hover:text-white transition-colors">
             <ChevronLeft className="w-5 h-5" /> Dashboard
           </Link>
@@ -170,16 +170,36 @@ export default function ProjectPage() {
             }`}
           >
             <Settings className="w-5 h-5" />
-            Export Settings
+            Pengaturan Tampilan
             {settingsPanelOpen ? <PanelRightClose className="w-4 h-4 ml-auto" /> : <PanelRightOpen className="w-4 h-4 ml-auto" />}
           </button>
         </nav>
+        <AnimatePresence>
+          {settingsPanelOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+              className="flex-1 min-h-0 flex flex-col overflow-hidden border-t border-white/5"
+            >
+              <div className="py-3 px-2 text-sm font-medium text-cyan-400/80 border-b border-white/5">
+                Preview mengikuti pengaturan ini
+              </div>
+              <ExportSettingsPanel settings={exportSettings} onChange={setExportSettings} embedded />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </aside>
 
-      <main className="flex-1 ml-64 p-6 flex flex-col min-h-0">
+      <main className={`flex-1 p-6 flex flex-col min-h-0 transition-all duration-200 ${settingsPanelOpen ? "ml-80" : "ml-64"}`}>
         <div className="flex gap-4 flex-1 min-h-0 overflow-x-auto overflow-y-hidden min-w-0">
           <div className="flex-1 flex flex-col min-w-0 relative">
-            <div className="rounded-xl bg-black overflow-hidden aspect-[9/16] max-w-md mx-auto">
+            <div
+              className={`rounded-xl bg-black overflow-hidden max-w-md mx-auto ${
+                exportSettings.export_mode === "face_tracking" ? "aspect-[9/16]" : "aspect-video"
+              }`}
+            >
               {isAnalyzing ? (
                 <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-zinc-400">
                   <Loader2 className="w-16 h-16 animate-spin text-cyan-400" />
@@ -319,9 +339,6 @@ export default function ProjectPage() {
             </div>
           </div>
 
-          {settingsPanelOpen && (
-            <ExportSettingsPanel settings={exportSettings} onChange={setExportSettings} />
-          )}
         </div>
 
         {project.status === "error" && (
