@@ -50,6 +50,14 @@ class AISegmentAnalyzer:
     TARGET_CLIPS_PER_HOUR = 20
     CLIP_MIN_DURATION_SEC = 15
     CLIP_MAX_DURATION_SEC = 60
+
+    # [OPUS-STYLE] Multi-clip pipeline: sliding window for 10-30 clips per video
+    OPUS_WINDOW_SIZE = 25
+    OPUS_STEP_SIZE = 10
+    OPUS_CLIP_MIN = 15
+    OPUS_CLIP_MAX = 45
+    OPUS_TOP_CLIPS = 15
+    OPUS_OVERLAP_THRESHOLD = 0.60
     HOOK_PRE_ROLL_SEC = 2  # Start clip 2s before hook moment
     HOOK_POST_ROLL_MIN = 30
     HOOK_POST_ROLL_MAX = 45
@@ -310,6 +318,83 @@ class AISegmentAnalyzer:
         except Exception:
             pass
         return scores
+
+    def _compute_hook_score(self, text: str) -> float:
+        """Hook score 0-100: phrases that mark viral statements."""
+        if not text or not text.strip():
+            return 0.0
+        t = text.lower().strip()
+        score = 0.0
+        for p in self.HOOK_MOMENT_PATTERNS + self.HOOK_PATTERNS + self.HOOK_STRONG_VERBS:
+            if p in t:
+                score += 20.0
+        for m in self.HUMOR_MARKERS:
+            if m in t:
+                score += 15.0
+        for s in self.SURPRISE_PATTERNS:
+            if s in t:
+                score += 12.0
+        for sent in re.split(r'[.!?]+', t):
+            w = len(sent.split())
+            if 5 <= w <= 12:
+                score += 10.0
+                break
+        return min(100.0, score)
+
+    def _compute_emotion_score(self, text: str) -> float:
+        """Emotion score 0-100: emotional content detection."""
+        if not text or not text.strip():
+            return 0.0
+        t = text.lower()
+        score = 0.0
+        for kw in self.VIRAL_CATEGORY_KEYWORDS.get("emotional", []):
+            if kw in t:
+                score += 25.0
+        for kw in self.VIRAL_CATEGORY_KEYWORDS.get("anger_injustice", []):
+            if kw in t:
+                score += 20.0
+        for kw in self.VIRAL_CATEGORY_KEYWORDS.get("inspirational", []):
+            if kw in t:
+                score += 18.0
+        emo_raw = self._emotion_score_for_text(text)
+        score += emo_raw * 15.0
+        return min(100.0, score)
+
+    def _compute_controversy_score(self, text: str) -> float:
+        """Controversy/argument score 0-100: debate, disagreement, strong opinions."""
+        if not text or not text.strip():
+            return 0.0
+        t = text.lower()
+        score = 0.0
+        for p in self.ARGUMENT_PATTERNS:
+            if p in t:
+                score += 25.0
+        for s in self.STRONG_STATEMENTS:
+            if s in t:
+                score += 20.0
+        for kw in self.VIRAL_CATEGORY_KEYWORDS.get("controversy", []):
+            if kw in t:
+                score += 22.0
+        for kw in self.VIRAL_CATEGORY_KEYWORDS.get("surprising", []):
+            if kw in t:
+                score += 12.0
+        return min(100.0, score)
+
+    def _compute_information_density_score(self, text: str) -> float:
+        """Information density 0-100: substantial content, not filler."""
+        if not text or not text.strip():
+            return 0.0
+        cleaned = self._clean_filler_words(text)
+        words = cleaned.split()
+        if len(words) < 5:
+            return 0.0
+        unique = len(set(w.lower() for w in words))
+        density = unique / max(1, len(words)) * 100
+        if len(text) > 200:
+            density = min(100, density + 15)
+        if self._is_filler_heavy(text):
+            density *= 0.3
+        return min(100.0, max(0.0, density))
 
     def _compute_local_viral_score(self, window_text: str) -> int:
         """
