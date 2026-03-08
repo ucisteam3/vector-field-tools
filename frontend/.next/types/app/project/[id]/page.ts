@@ -1,8 +1,8 @@
-// File: J:\HEATMAP5\frontend\src\app\settings\page.tsx
-import * as entry from '../../../../src/app/settings/page.js'
+// File: J:\HEATMAP5\frontend\src\app\project\[id]\page.tsx
+import * as entry from '../../../../../src/app/project/[id]/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
-type TEntry = typeof import('../../../../src/app/settings/page.js')
+type TEntry = typeof import('../../../../../src/app/project/[id]/page.js')
 
 // Check that the entry is a valid entry
 checkFields<Diff<{
