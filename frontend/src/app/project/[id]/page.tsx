@@ -173,7 +173,7 @@ export default function ProjectPage() {
                             <Play className="w-3 h-3" /> Play
                           </button>
                           <a
-                            href={clipUrl(id, clip.clip_path.replace("clips/", ""))}
+                            href={clipUrl(id, clip.clip_path.replace("clips/", "")) + "?download=1"}
                             download
                             onClick={(e) => e.stopPropagation()}
                             className="flex items-center gap-1 px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-xs"

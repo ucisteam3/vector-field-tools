@@ -291,12 +291,13 @@ def extract_clip_segment(project_id: str, clip_index: int):
 
 
 @app.get("/clip/{project_id}/{clip_filename:path}")
-def serve_clip(project_id: str, clip_filename: str):
-    """Serve a clip video file (exported clip by filename)."""
+def serve_clip(project_id: str, clip_filename: str, download: bool = False):
+    """Serve a clip video file. inline=preview (no IDM), download=1 for attachment."""
     cp = get_clip_path(project_id, clip_filename)
     if not cp or not cp.exists():
         raise HTTPException(status_code=404, detail="Clip not found")
-    return FileResponse(cp, media_type="video/mp4")
+    disp = "attachment" if download else "inline"
+    return FileResponse(cp, media_type="video/mp4", headers={"Content-Disposition": disp})
 
 
 @app.post("/project/{project_id}/export/{clip_index:int}")
