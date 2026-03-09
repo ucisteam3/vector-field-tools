@@ -480,10 +480,8 @@ class ClipExporter:
                     input_args = ['-i', str(self.parent.video_path)]
 
 
-            # Construct Filter Complex
-            fc_str = ""
+            # Construct Filter Complex — delegate to export_pipeline
             _raw_mode = self.parent.custom_settings.get("export_mode", "landscape_fit")
-            # Normalize: ensure only supported modes (portrait=face_tracking, landscape_fit, podcast_smart)
             if _raw_mode in ("portrait", "face_tracking", "9:16", "portrait_9_16"):
                 export_mode = "face_tracking"
             elif _raw_mode == "landscape_fit":
@@ -496,8 +494,33 @@ class ClipExporter:
             self._progress(3, f"Mode: {mode_label}...")
             print(f"  [EXPORT] Mode: {export_mode} ({mode_label})")
 
-            # Heavy filters force CPU fallback (no CUDA equivalents: zoompan, subtitles, drawtext, boxblur, overlay)
-            has_heavy_filters = (
+            if not EXPORT_PIPELINE_AVAILABLE:
+                print("  [ERROR] Export pipeline not available.")
+                if clip_num is None:
+                    _safe_messagebox("error", "Kesalahan", "Modul export pipeline tidak tersedia.")
+                return False
+            return export_clip(
+                input_video=str(self.parent.video_path),
+                output_video=str(output_path),
+                start=result["start"],
+                duration=duration,
+                mode=export_mode,
+                subtitles=ass_path,
+                voiceover_path=voiceover_path,
+                bgm_file_path=bgm_file_path if has_bgm else None,
+                custom_settings=self.parent.custom_settings,
+                parent=self.parent,
+                effective_video_path=effective_video_path,
+                effective_start=effective_start,
+                effective_duration=effective_duration,
+                progress_callback=self._progress,
+                clip_num=clip_num,
+                output_filename=output_filename,
+                safe_messagebox=_safe_messagebox,
+            )
+
+            # ---- REMOVED: inlined filter build + FFmpeg run moved to export_pipeline ----
+            _REMOVED_has_heavy_filters = (
                 self.parent.custom_settings.get("dynamic_zoom_enabled", False) or
                 bool(ass_path) or
                 self.parent.custom_settings.get("watermark_enabled", False) or
