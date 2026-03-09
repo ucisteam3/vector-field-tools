@@ -413,14 +413,12 @@ class ClipExporter:
             print(f"  [EXPORT] Mode: {export_mode}")
 
             # Heavy filters force CPU fallback (no CUDA equivalents: zoompan, subtitles, drawtext, boxblur, overlay)
-            # landscape_fit uses boxblur+overlay which can fail in hybrid (NVDEC+NVENC); use full CPU for reliability
             has_heavy_filters = (
                 self.parent.custom_settings.get("dynamic_zoom_enabled", False) or
                 bool(ass_path) or
                 self.parent.custom_settings.get("watermark_enabled", False) or
                 self.parent.custom_settings.get("overlay_enabled", False) or
-                self.parent.custom_settings.get("source_credit_enabled", False) or
-                (export_mode == "landscape_fit")
+                self.parent.custom_settings.get("source_credit_enabled", False)
             )
 
             # Podcast Smart: pre-process video with per-frame active-speaker crop
