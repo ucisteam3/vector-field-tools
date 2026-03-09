@@ -406,6 +406,7 @@ class ClipExporter:
 
 
             # Construct Filter Complex
+            fc_str = ""
             export_mode = self.parent.custom_settings.get("export_mode", "landscape_fit")
             mode_label = {"podcast_smart": "Podcast Smart", "face_tracking": "Face Tracking", "landscape_fit": "Landscape"}.get(export_mode, export_mode)
             self._progress(3, f"Mode: {mode_label}...")
