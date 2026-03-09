@@ -974,10 +974,10 @@ class ClipExporter:
             else:
                 fc_str += ";" + f"{audio_filter}[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
 
-            # Ultra-minimal: only scale — works on stripped FFmpeg builds (no trailing semicolon)
+            # Minimal and ultra-minimal: only scale + -map 0:a — must always succeed on any FFmpeg build
+            minimal_fc_str_video_only = "[0:v]scale=1080:1920[v_out]"
             ultra_minimal_fc = "[0:v]scale=1080:1920[v_out]"
-            # Minimal: base mode chain + passthrough to [v_out] (valid chain; no trailing semicolon)
-            minimal_fc_str_video_only = base_fc_str + "[v_mixed]scale=iw:ih[v_out]"
+            # With audio in graph (for non-minimal path): base + passthrough to [v_out] then audio
             minimal_fc_str = base_fc_str + "[v_mixed]scale=iw:ih[v_out];" + audio_filter + "[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
                 
             # GPU vs CPU pipeline

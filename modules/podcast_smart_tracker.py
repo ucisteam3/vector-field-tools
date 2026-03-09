@@ -109,10 +109,13 @@ class PodcastSmartTracker:
             crop_width = frame_width
             crop_height = int(crop_width * 16 / 9)
 
+        # Safe center crop when no faces — never return (0,0)
         if not faces:
             cx = frame_width / 2
             cy = frame_height / 2
-            return (cx - crop_width / 2, cy - crop_height / 2, crop_width, crop_height)
+            crop_x = max(0, min(cx - crop_width / 2, frame_width - crop_width))
+            crop_y = max(0, min(cy - crop_height / 2, frame_height - crop_height))
+            return (crop_x, crop_y, crop_width, crop_height)
 
         # Determine active speaker(s)
         if len(faces) == 1:
@@ -131,8 +134,12 @@ class PodcastSmartTracker:
             m1 = motions[1] if len(motions) > 1 else 0
             total = m0 + m1
             if total < self.motion_threshold:
-                # Neither speaking - use last or center
-                return (0, 0, crop_width, crop_height)
+                # Neither speaking - safe center crop (never (0,0))
+                cx = frame_width / 2
+                cy = frame_height / 2
+                crop_x = max(0, min(cx - crop_width / 2, frame_width - crop_width))
+                crop_y = max(0, min(cy - crop_height / 2, frame_height - crop_height))
+                return (crop_x, crop_y, crop_width, crop_height)
             ratio = min(m0, m1) / max(m0, m1) if max(m0, m1) > 0 else 0
             if ratio >= self.both_speak_ratio:
                 # Both speaking - zoom out: crop to include both faces
@@ -260,13 +267,13 @@ class PodcastSmartTracker:
             last = positions[-1] if positions else (w // 2)
             positions.extend([last] * (total_frames - len(positions)))
 
-        # Step 6: Exponential smoothing (smoothed[i] = smoothed[i-1]*0.85 + raw[i]*0.15)
+        # Step 6: Smoothing via _lerp(prev, curr, smoothing_factor)
         smoothed: List[float] = []
         for i in range(len(positions)):
             if i == 0:
                 smoothed.append(positions[0])
             else:
-                s = smoothed[i - 1] * 0.85 + positions[i] * 0.15
+                s = _lerp(smoothed[i - 1], positions[i], self.smoothing_factor)
                 smoothed.append(s)
 
         # Step 7: Return crop boxes (x, y, w, h) per frame
