@@ -230,13 +230,9 @@ class ClipExporter:
                 print("  [ERROR] Video belum diunduh!")
             return False
 
-        # [INSTANT START] Check for leading silence
-        self._progress(2, "Memeriksa leading silence...")
-        try:
-            silence_offset = self.detect_leading_silence(self.parent.video_path, result['start'])
-        except Exception as e:
-            print(f"  [WARN] detect_leading_silence failed: {e}")
-            silence_offset = 0
+        # [INSTANT START] Leading silence detection disabled to avoid export pipeline crashes
+        self._progress(2, "Skipping silence detection...")
+        silence_offset = 0
         if silence_offset > 0:
             print(f"  [INSTANT START] Skipping first {silence_offset:.2f}s of silence")
             result['start'] += silence_offset
