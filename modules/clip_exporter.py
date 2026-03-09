@@ -392,6 +392,15 @@ class ClipExporter:
             self._progress(3, f"Mode: {mode_label}...")
             print(f"  [EXPORT] Mode: {export_mode}")
 
+            # Heavy filters force CPU fallback (no CUDA equivalents: zoompan, subtitles, drawtext, boxblur, overlay)
+            has_heavy_filters = (
+                self.parent.custom_settings.get("dynamic_zoom_enabled", False) or
+                bool(ass_path) or
+                self.parent.custom_settings.get("watermark_enabled", False) or
+                self.parent.custom_settings.get("overlay_enabled", False) or
+                self.parent.custom_settings.get("source_credit_enabled", False)
+            )
+
             # Podcast Smart: pre-process video with per-frame active-speaker crop
             effective_video_path = str(self.parent.video_path)
             effective_start = result['start']
@@ -481,8 +490,16 @@ class ClipExporter:
             if input_args[0] == '-i':
                 input_args[1] = effective_video_path
 
+            use_pure_gpu_possible = _gpu_available() and getattr(self.parent, 'gpu_var', None) and self.parent.gpu_var.get()
+            base_supports_gpu = False
+
             if export_mode == "podcast_smart" and effective_video_path != str(self.parent.video_path):
-                fc_str = "[0:v]setsar=1[v_mixed];"
+                # Preprocessed 1080x1920 - simple scale_cuda passthrough or setsar
+                base_supports_gpu = True
+                if use_pure_gpu_possible and not has_heavy_filters:
+                    fc_str = "[0:v]scale_cuda=1080:1920[v_mixed];"
+                else:
+                    fc_str = "[0:v]setsar=1[v_mixed];"
             elif export_mode == "face_tracking" and MEDIAPIPE_AVAILABLE:
                 self._progress(10, "Face Tracking: Menganalisis wajah...")
                 print("  [FACE TRACKING] Analyzing clip segment for face positions...")
@@ -531,13 +548,18 @@ class ClipExporter:
                         crop_y = (frame_height - crop_height) // 2
                         
                         print(f"  [FACE TRACKING] Crop: {crop_width}x{crop_height} at ({crop_x}, {crop_y})")
-                        
-                        # Apply crop and scale to 1080x1920
-                        fc_str = (
-                            f"[0:v]setsar=1,crop={crop_width}:{crop_height}:{crop_x}:{crop_y},scale=1080:1920[v_mixed];"
-                        )
+                        base_supports_gpu = True
+                        # Apply crop and scale - GPU or CPU
+                        if use_pure_gpu_possible and not has_heavy_filters:
+                            fc_str = (
+                                f"[0:v]crop_cuda={crop_width}:{crop_height}:{crop_x}:{crop_y},scale_cuda=1080:1920[v_mixed];"
+                            )
+                        else:
+                            fc_str = (
+                                f"[0:v]setsar=1,crop={crop_width}:{crop_height}:{crop_x}:{crop_y},scale=1080:1920[v_mixed];"
+                            )
                     else:
-                        # No faces detected - fallback to center crop
+                        # No faces detected - fallback to center crop (expressions, CPU only)
                         print("  [FACE TRACKING] No faces detected - using center crop")
                         fc_str = (
                             f"[0:v]setsar=1,crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920[v_mixed];"
@@ -896,12 +918,28 @@ class ClipExporter:
             else:
                 fc_str += f"{audio_filter}[a_out]"
                 
-            # GPU pipeline: hwaccel decode -> hwdownload -> CPU filters -> hwupload_cuda -> NVENC
-            use_gpu = self.parent.gpu_var.get()
-            if use_gpu:
+            # GPU vs CPU pipeline
+            use_pure_gpu = use_pure_gpu_possible and not has_heavy_filters and base_supports_gpu
+            use_cpu = not use_pure_gpu
+
+            if use_pure_gpu:
+                # Pure GPU: decode(GPU) -> scale_cuda/crop_cuda -> NVENC. No hwdownload/hwupload.
+                filter_complex = fc_str
+                print("  [GPU] Pure pipeline: NVDEC + scale_cuda/crop_cuda + NVENC")
+            elif use_pure_gpu_possible and not has_heavy_filters and not base_supports_gpu:
+                # GPU decode/encode with CPU filters (hwdownload -> filters -> hwupload)
                 fc_str = "[0:v]hwdownload,format=nv12[v0];" + fc_str.replace("[0:v]", "[v0]")
                 fc_str = fc_str.replace(f"{last_v_label}null[v_out];", f"{last_v_label}hwupload_cuda[v_out];")
-            filter_complex = fc_str
+                filter_complex = fc_str
+                use_cpu = False  # Still using NVENC
+                print("  [GPU] Hybrid: NVDEC + CPU filters + NVENC")
+            else:
+                # Intentional CPU fallback (heavy filters)
+                filter_complex = fc_str
+                use_cpu = True
+                if has_heavy_filters:
+                    print("  [CPU] Fallback: zoom/subtitle/watermark/blur/overlay require CPU filters")
+            use_gpu_encode = use_pure_gpu or (use_pure_gpu_possible and not use_cpu)
 
             def get_ffmpeg_cmd():
                 if effective_video_path != str(self.parent.video_path):
@@ -913,7 +951,8 @@ class ClipExporter:
                     pad_duration = pad_end - pad_start
                 first_input = input_args[:2]
                 rest_inputs = input_args[2:] if len(input_args) > 2 else []
-                hwaccel = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] if use_gpu else []
+                # GPU decode when using NVENC (pure or hybrid)
+                hwaccel = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] if use_gpu_encode else []
                 base_cmd = [
                     'ffmpeg', '-y', '-fflags', '+genpts', '-avoid_negative_ts', 'make_zero',
                     *hwaccel, *first_input,
@@ -923,9 +962,10 @@ class ClipExporter:
                     '-map', '[v_out]', '-map', '[a_out]',
                     '-max_muxing_queue_size', '1024',
                 ]
-                if use_gpu:
+                if use_gpu_encode:
                     base_cmd.extend([
-                        '-c:v', 'h264_nvenc', '-preset', 'p5', '-b:v', '6M',
+                        '-c:v', 'h264_nvenc', '-preset', 'p5', '-tune', 'hq',
+                        '-rc:v', 'vbr', '-cq:v', '19', '-b:v', '6M', '-maxrate', '10M', '-bufsize', '12M',
                         '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
                         str(output_path)
                     ])
