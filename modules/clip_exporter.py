@@ -599,8 +599,12 @@ class ClipExporter:
                         f"[bg_v][fg_v]overlay=(W-w)/2:(H-h)/2[v_mixed];"
                     )
             
+            # Save base filter (video only up to [v_mixed]) for "Filter not found" retry
+            base_fc_str = fc_str
+            base_last_v_label = "[v_mixed]"
+            
             # --- Check FFmpeg filter availability (avoid "Filter not found" on minimal builds) ---
-            _has = _ffmpeg_has_filters("subtitles", "drawtext", "zoompan")
+            _has = _ffmpeg_has_filters("subtitles", "drawtext", "zoompan", "hflip")
             # --- DYNAMIC ZOOM (skip if FFmpeg has no 'zoompan') ---
             zoom_enabled = self.parent.custom_settings.get("dynamic_zoom_enabled", False) and _has.get("zoompan", True)
             if zoom_enabled:
@@ -614,8 +618,8 @@ class ClipExporter:
             else:
                 last_v_label = "[v_mixed]"
             
-            # --- VIDEO FLIP (before subtitles/watermark) ---
-            flip_enabled = self.parent.custom_settings.get("video_flip_enabled", False)
+            # --- VIDEO FLIP (skip if FFmpeg has no 'hflip') ---
+            flip_enabled = self.parent.custom_settings.get("video_flip_enabled", False) and _has.get("hflip", True)
             if flip_enabled:
                 print(f"  [FLIP] Horizontal flip enabled (anti-copyright)")
                 fc_str += f"{last_v_label}hflip[v_flipped];"
