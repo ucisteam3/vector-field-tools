@@ -254,7 +254,8 @@ class ClipExporter:
             output_dir = Path(output_dir)
         
         # Generate safe filename from topic
-        safe_topic = "".join(c for c in result['topic'][:50] if c.isalnum() or c in (' ', '-', '_')).strip()
+        topic = result.get("topic") or "Clip"
+        safe_topic = "".join(c for c in str(topic)[:50] if c.isalnum() or c in (" ", "-", "_")).strip()
         if not safe_topic:
             safe_topic = f"clip_{clip_num or 'selected'}"
         
@@ -263,7 +264,11 @@ class ClipExporter:
         output_path = output_dir / output_filename
         
         # Calculate duration
-        duration = result['end'] - result['start']
+        start = float(result.get("start", 0))
+        end = float(result.get("end", start + 30))
+        duration = max(0.1, end - start)
+        result["start"] = start
+        result["end"] = end
         
         try:
             # Use ffmpeg to extract clip
@@ -271,8 +276,12 @@ class ClipExporter:
             
             # Check if ffmpeg is available
             try:
-                subprocess.run(['ffmpeg', '-version'], 
-                             capture_output=True, check=True, creationflags=0x08000000)
+                subprocess.run(
+                    ["ffmpeg", "-version"],
+                    capture_output=True,
+                    check=True,
+                    creationflags=(0x08000000 if os.name == "nt" else 0),
+                )
             except (subprocess.CalledProcessError, FileNotFoundError):
                 _safe_messagebox("error", "Kesalahan",
                     "FFmpeg tidak ditemukan. Silakan instal FFmpeg dan tambahkan ke PATH.")
@@ -1029,7 +1038,7 @@ class ClipExporter:
                     self._progress(100, "Selesai (NVENC)")
                     print(f"  [SUCCESS] Klip {clip_num or ''} berhasil diekspor (GPU)")
                     if clip_num is None:
-                        messagebox.showinfo("Berhasil", f"Klip berhasil diekspor (GPU):\n{output_filename}")
+                        _safe_messagebox("info", "Berhasil", f"Klip berhasil diekspor (GPU):\n{output_filename}")
                     return True
                 print(f"  [GPU] NVENC gagal (exit {ret_code}). Mencoba fallback CPU (libx264)...")
                 if filter_complex_cpu is not None:
@@ -1040,10 +1049,10 @@ class ClipExporter:
                         self._progress(100, "Selesai (CPU)")
                         print(f"  [SUCCESS] Klip {clip_num or ''} berhasil diekspor (CPU fallback)")
                         if clip_num is None:
-                            messagebox.showinfo("Berhasil", f"Klip berhasil diekspor (CPU):\n{output_filename}")
+                            _safe_messagebox("info", "Berhasil", f"Klip berhasil diekspor (CPU):\n{output_filename}")
                         return True
                 if clip_num is None:
-                    messagebox.showerror("Kesalahan", f"NVENC gagal dan fallback CPU tidak tersedia. Cek log konsol.")
+                    _safe_messagebox("error", "Kesalahan", "NVENC gagal dan fallback CPU tidak tersedia. Cek log konsol.")
                 return False
 
             print(f"  [CPU] Mengekspor dengan libx264...")
@@ -1053,14 +1062,18 @@ class ClipExporter:
                 self._progress(100, "Selesai (CPU libx264)")
                 print(f"  [SUCCESS] Klip {clip_num or ''} berhasil diekspor (CPU)")
                 if clip_num is None:
-                    messagebox.showinfo("Berhasil", f"Klip berhasil diekspor (CPU):\n{output_filename}")
+                    _safe_messagebox("info", "Berhasil", f"Klip berhasil diekspor (CPU):\n{output_filename}")
                 return True
             print(f"  [ERROR] Ekspor gagal total.")
             if clip_num is None:
-                messagebox.showerror("Kesalahan", f"Gagal mengekspor klip. Cek log konsol.")
+                _safe_messagebox("error", "Kesalahan", "Gagal mengekspor klip. Cek log konsol.")
             return False
                     
         except Exception as e:
             if clip_num is None:
-                messagebox.showerror("Kesalahan", f"Gagal mengekspor klip: {str(e)}")
+                _safe_messagebox("error", "Kesalahan", f"Gagal mengekspor klip: {str(e)}")
+            print(f"  [EXPORT ERROR] {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
