@@ -19,8 +19,10 @@ Setelah melakukan perubahan pada kode (backend atau frontend), **selalu jalankan
 
 3. **Jalankan frontend** (background):
    ```
-   cd j:\HEATMAP5\frontend; npm run start
+   cd j:\HEATMAP5\frontend; npm run dev
    ```
+
+**Kedepannya**: Setiap kali melakukan perubahan pada kode backend atau frontend, **langsung restart aplikasi** tanpa menunggu user minta.
 
 Untuk perubahan **frontend only**: cukup restart frontend.
 Untuk perubahan **backend only**: cukup restart backend.
