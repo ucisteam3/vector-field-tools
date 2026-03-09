@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Save, RefreshCw } from "lucide-react";
+import { Loader2, Save, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { getApiKeys, saveApiKeys, testApiKeys, type ApiKeysPayload, type ApiKeyTestResult } from "@/lib/api";
 
 function normalizeLines(text: string): string[] {
@@ -54,9 +54,18 @@ export default function ApiKeysPanel() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [testing, setTesting] = useState<Record<string, boolean>>({});
   const [testResults, setTestResults] = useState<Record<string, ApiKeyTestResult[]>>({});
   const [testNote, setTestNote] = useState<Record<string, string | undefined>>({});
+  const [open, setOpen] = useState<Record<string, boolean>>({
+    openai: true,
+    gemini: true,
+    anthropic: false,
+    llama: false,
+    deepseek: false,
+    groq: false,
+  });
 
   const [form, setForm] = useState<Record<ProviderKey, string>>({
     openai: "",
@@ -85,6 +94,8 @@ export default function ApiKeysPanel() {
         });
         setRotate({ ...EMPTY.rotate_on_error, ...(data.rotate_on_error || {}) });
         setError(null);
+        setDirty(false);
+        setSaved(false);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -115,8 +126,8 @@ export default function ApiKeysPanel() {
       setSaved(false);
       await saveApiKeys(payload);
       setSaved(true);
+      setDirty(false);
       setError(null);
-      setTimeout(() => setSaved(false), 2000);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -156,6 +167,11 @@ export default function ApiKeysPanel() {
         </p>
       </div>
 
+      {saved && (
+        <div className="rounded-lg border border-emerald-700/50 bg-emerald-900/20 p-3 text-sm text-emerald-200">
+          API Key tersimpan.
+        </div>
+      )}
       {error && (
         <div className="rounded-lg border border-red-700/50 bg-red-900/20 p-3 text-sm text-red-200">{error}</div>
       )}
@@ -163,82 +179,103 @@ export default function ApiKeysPanel() {
       <div className="space-y-4">
         {PROVIDERS.map((p) => (
           <div key={p.key} className="rounded-xl border border-zinc-700 bg-zinc-900/30 p-4">
-            <div className="flex items-start justify-between gap-3">
+            <button
+              onClick={() => setOpen((o) => ({ ...o, [p.key]: !o[p.key] }))}
+              className="w-full flex items-start justify-between gap-3 text-left"
+            >
               <div>
                 <div className="text-sm font-medium text-zinc-200">{p.label}</div>
                 <div className="text-xs text-zinc-500 mt-0.5">{p.hint}</div>
               </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => onTest(p.key)}
-                  disabled={!!testing[p.key]}
-                  className="text-xs px-3 py-1.5 rounded-md border border-zinc-600 bg-zinc-800/60 hover:bg-zinc-800 text-zinc-200 disabled:opacity-60 inline-flex items-center gap-2"
-                >
-                  {testing[p.key] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                  Test
-                </button>
-                <label className="text-xs text-zinc-400 flex items-center gap-2 select-none">
-                  <input
-                    type="checkbox"
-                    checked={!!rotate[p.key]}
-                    onChange={(e) => setRotate((r) => ({ ...r, [p.key]: e.target.checked }))}
-                    className="rounded border-zinc-600 bg-zinc-800 text-cyan-500 focus:ring-cyan-500"
-                  />
-                  Rotate on error
-                </label>
-              </div>
-            </div>
+              <div className="mt-0.5 text-zinc-400">{open[p.key] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</div>
+            </button>
 
-            <textarea
-              value={form[p.key]}
-              onChange={(e) => setForm((f) => ({ ...f, [p.key]: e.target.value }))}
-              placeholder="tempel key di sini...\n1 key per baris"
-              className="mt-3 w-full min-h-[110px] rounded-lg bg-zinc-950/40 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-            />
+            {open[p.key] && (
+              <>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onTest(p.key);
+                    }}
+                    disabled={!!testing[p.key]}
+                    className="text-xs px-3 py-1.5 rounded-md border border-zinc-600 bg-zinc-800/60 hover:bg-zinc-800 text-zinc-200 disabled:opacity-60 inline-flex items-center gap-2"
+                  >
+                    {testing[p.key] ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    )}
+                    Test
+                  </button>
+                  <label className="text-xs text-zinc-400 flex items-center gap-2 select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!rotate[p.key]}
+                      onChange={(e) => {
+                        setRotate((r) => ({ ...r, [p.key]: e.target.checked }));
+                        setDirty(true);
+                        setSaved(false);
+                      }}
+                      className="rounded border-zinc-600 bg-zinc-800 text-cyan-500 focus:ring-cyan-500"
+                    />
+                    Rotate on error
+                  </label>
+                </div>
 
-            {(testNote[p.key] || testResults[p.key]) && (
-              <div className="mt-3 text-xs">
-                {testNote[p.key] && <div className="text-zinc-500">{testNote[p.key]}</div>}
-                {!!(testResults[p.key] || []).length && (
-                  <div className="mt-2 space-y-1">
-                    {(testResults[p.key] || []).map((r, idx) => (
-                      <div
-                        key={`${r.key}-${idx}`}
-                        className="flex items-center justify-between gap-2 rounded-md border border-zinc-700 bg-zinc-950/30 px-2 py-1"
-                      >
-                        <span className="font-mono text-zinc-300">{r.key}</span>
-                        <span
-                          className={
-                            r.status === "ok"
-                              ? "text-emerald-300"
-                              : r.status === "saved"
-                              ? "text-zinc-400"
-                              : "text-red-300"
-                          }
-                          title={r.detail || ""}
-                        >
-                          {r.status === "ok" ? "OK" : r.status === "saved" ? "SAVED" : "ERROR"}
-                        </span>
-                      </div>
-                    ))}
-                    {(testResults[p.key] || []).some((r) => r.status === "error" && r.detail) && (
-                      <div className="text-zinc-500 mt-1">
-                        Hover status “ERROR” untuk melihat ringkasan error.
+                <textarea
+                  value={form[p.key]}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, [p.key]: e.target.value }));
+                    setDirty(true);
+                    setSaved(false);
+                  }}
+                  placeholder="tempel key di sini...\n1 key per baris"
+                  className="mt-3 w-full min-h-[110px] rounded-lg bg-zinc-950/40 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                />
+
+                {(testNote[p.key] || testResults[p.key]) && (
+                  <div className="mt-3 text-xs">
+                    {testNote[p.key] && <div className="text-zinc-500">{testNote[p.key]}</div>}
+                    {!!(testResults[p.key] || []).length && (
+                      <div className="mt-2 space-y-1">
+                        {(testResults[p.key] || []).map((r, idx) => (
+                          <div
+                            key={`${r.key}-${idx}`}
+                            className="flex items-center justify-between gap-2 rounded-md border border-zinc-700 bg-zinc-950/30 px-2 py-1"
+                          >
+                            <span className="font-mono text-zinc-300">{r.key}</span>
+                            <span
+                              className={
+                                r.status === "ok"
+                                  ? "text-emerald-300"
+                                  : r.status === "saved"
+                                  ? "text-zinc-400"
+                                  : "text-red-300"
+                              }
+                              title={r.detail || ""}
+                            >
+                              {r.status === "ok" ? "OK" : r.status === "saved" ? "SAVED" : "ERROR"}
+                            </span>
+                          </div>
+                        ))}
+                        {(testResults[p.key] || []).some((r) => r.status === "error" && r.detail) && (
+                          <div className="text-zinc-500 mt-1">Hover status “ERROR” untuk melihat ringkasan error.</div>
+                        )}
                       </div>
                     )}
                   </div>
                 )}
-              </div>
+              </>
             )}
           </div>
         ))}
       </div>
 
       <div className="flex items-center justify-end gap-3 pt-2">
-        {saved && <span className="text-sm text-cyan-300">Tersimpan</span>}
         <button
           onClick={onSave}
-          disabled={saving}
+          disabled={saving || !dirty}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-medium transition-colors disabled:opacity-60"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}

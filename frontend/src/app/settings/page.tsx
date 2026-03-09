@@ -1,16 +1,45 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { CheckCircle, Loader2 } from "lucide-react";
+import { CheckCircle, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import AppSidebar from "@/components/AppSidebar";
 import ExportSettingsPanel from "@/components/ExportSettingsPanel";
 import ApiKeysPanel from "@/components/ApiKeysPanel";
 import { useAppSettings } from "@/lib/settings-store";
 
+function AccordionSection({
+  title,
+  description,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  description?: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-zinc-700 bg-zinc-800/50 overflow-hidden">
+      <button onClick={onToggle} className="w-full px-5 py-4 flex items-start justify-between text-left">
+        <div>
+          <div className="text-sm font-semibold text-zinc-100">{title}</div>
+          {description && <div className="text-xs text-zinc-400 mt-1">{description}</div>}
+        </div>
+        <div className="text-zinc-400 mt-0.5">{open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</div>
+      </button>
+      {open && <div className="border-t border-zinc-700/50">{children}</div>}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [settings, setSettings] = useAppSettings();
   const [showSavedModal, setShowSavedModal] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [openExport, setOpenExport] = useState(true);
+  const [openKeys, setOpenKeys] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -27,23 +56,30 @@ export default function SettingsPage() {
           <p className="text-zinc-400 mb-6">
             Konfigurasi pengaturan sebelum memulai analisis. Preview dan hasil export akan mengikuti pengaturan ini.
           </p>
-          <div className="rounded-xl border border-zinc-700 bg-zinc-800/50 overflow-hidden">
-            {mounted ? (
-              <ExportSettingsPanel
-                settings={settings}
-                onChange={setSettings}
-                standalone
-                onSave={handleSave}
-              />
-            ) : (
-              <div className="p-8 flex items-center justify-center min-h-[200px]">
-                <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
-              </div>
-            )}
-          </div>
+          <div className="space-y-4">
+            <AccordionSection
+              title="Export Settings"
+              description="Pengaturan export (mode, zoom, subtitle, watermark, BGM)."
+              open={openExport}
+              onToggle={() => setOpenExport((v) => !v)}
+            >
+              {mounted ? (
+                <ExportSettingsPanel settings={settings} onChange={setSettings} standalone onSave={handleSave} />
+              ) : (
+                <div className="p-8 flex items-center justify-center min-h-[200px]">
+                  <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
+                </div>
+              )}
+            </AccordionSection>
 
-          <div className="mt-6 rounded-xl border border-zinc-700 bg-zinc-800/50 overflow-hidden">
-            <ApiKeysPanel />
+            <AccordionSection
+              title="API Key"
+              description="Simpan & test key. 1 key per baris. Rotate hanya saat error."
+              open={openKeys}
+              onToggle={() => setOpenKeys((v) => !v)}
+            >
+              <ApiKeysPanel />
+            </AccordionSection>
           </div>
         </div>
       </main>
