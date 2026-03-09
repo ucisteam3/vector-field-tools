@@ -104,7 +104,13 @@ def export_clip(
 
     from backend.web_context import WebAppContext
 
-    ctx = WebAppContext(project_dir)
+    try:
+        ctx = WebAppContext(project_dir)
+    except Exception as e:
+        print(f"[CLIP SERVICE] WebAppContext init failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
     ctx.video_path = str(video_path)
     ctx.current_video_path = str(video_path)
 

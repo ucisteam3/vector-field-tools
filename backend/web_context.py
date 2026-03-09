@@ -49,10 +49,13 @@ class WebAppContext:
         self.advanced_ai_enabled = MockVar(True)
         self.results_sort_var = MockVar("Skor")
 
-        # Settings - load from config or use defaults
-        from modules.settings_manager import load_settings
-        self.custom_settings = load_settings()
-        # Override path-dependent settings to use project-relative paths
+        # Settings - load from config or use defaults (never crash export)
+        try:
+            from modules.settings_manager import load_settings
+            self.custom_settings = load_settings()
+        except Exception as e:
+            print(f"[WebAppContext] load_settings failed: {e}")
+            self.custom_settings = {}
         self.custom_settings.setdefault("export_mode", "face_tracking")
         self.custom_settings.setdefault("watermark_enabled", False)
         self.custom_settings.setdefault("subtitle_enabled", False)
@@ -79,10 +82,15 @@ class WebAppContext:
         self.gemini_keys = []
         self.current_transcript_path = None
 
-        # Load config
-        self._load_config()
-        # Initialize lazy module slots
-        self._init_modules()
+        # Load config (never crash export)
+        try:
+            self._load_config()
+        except Exception as e:
+            print(f"[WebAppContext] _load_config failed: {e}")
+        try:
+            self._init_modules()
+        except Exception as e:
+            print(f"[WebAppContext] _init_modules failed: {e}")
 
     def _init_modules(self):
         """Lazy init slots - attributes set to None, populated on first property access"""
