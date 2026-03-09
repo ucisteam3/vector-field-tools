@@ -897,18 +897,14 @@ class ClipExporter:
                 # [A/V SYNC FIX] -ss and -t MUST come AFTER -i for accurate sync.
                 first_input = input_args[:2]  # -i and path
                 rest_inputs = input_args[2:] if len(input_args) > 2 else []
-                # GPU: NVDEC decode + hwdownload untuk filter CPU + NVENC encode
-                hwaccel_opts = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] if encoder == "gpu" else []
-                fc = filter_complex
-                if encoder == "gpu":
-                    fc = "[0:v]hwdownload,format=nv12[v0];" + fc.replace("[0:v]", "[v0]")
+                # GPU: NVENC encode only (CPU decode+filter - hwaccel cuda can fail on some builds)
                 base_cmd = [
                     'ffmpeg', '-y',
                     '-fflags', '+genpts', '-avoid_negative_ts', 'make_zero',
-                    *hwaccel_opts, *first_input,
+                    *first_input,
                     '-ss', str(pad_start), '-t', str(pad_duration),
                     *rest_inputs,
-                    '-filter_complex', fc,
+                    '-filter_complex', filter_complex,
                     '-map', '[v_out]', '-map', '[a_out]',
                     '-max_muxing_queue_size', '1024',
                 ]
@@ -972,10 +968,12 @@ class ClipExporter:
                             errors='replace'
                         )
                     
-                    # Read output line by line
+                    err_lines = []
                     for line in process.stdout:
                         line = line.strip()
                         if line:
+                            if "Error" in line or "error" in line or "Cannot" in line or "nvenc" in line.lower():
+                                err_lines.append(line[:300])
                             # Parse time= for progress (50-98%)
                             if encode_duration and encode_duration > 0 and "time=" in line:
                                 m = time_pat.search(line)
@@ -984,14 +982,17 @@ class ClipExporter:
                                     elapsed = h * 3600 + mn * 60 + s + ms / 1000.0
                                     pct = 50 + int(48 * min(1.0, elapsed / encode_duration))
                                     self._progress(pct, f"Mengode video{enc_info}... {int(elapsed)}s")
-                            # Filter interesting lines to avoid spam
                             if any(k in line for k in ["frame=", "time=", "size=", "speed="]):
                                 print(f"    [FFMPEG] {line}", end='\r')
                             elif "Error" in line or "error" in line:
                                 print(f"    [FFMPEG ERROR] {line}")
                     
                     process.wait()
-                    print("") # Newline after \r
+                    print("")
+                    if process.returncode != 0 and err_lines:
+                        print(f"  [FFMPEG FAIL] Exit {process.returncode}, last errors:")
+                        for e in err_lines[-5:]:
+                            print(f"    {e}")
                     return process.returncode
                     
                 except Exception as e:
@@ -1004,7 +1005,7 @@ class ClipExporter:
             if use_gpu:
                 print(f"  [GPU] Mencoba ekspor dengan NVENC...")
                 cmd = get_ffmpeg_cmd("gpu")
-                ret_code = run_ffmpeg_realtime(cmd, "GPU-NVDEC+NVENC", encode_dur, encoder_label="NVDEC+NVENC GPU")
+                ret_code = run_ffmpeg_realtime(cmd, "GPU-NVENC", encode_dur, encoder_label="NVENC GPU")
                 
                 if ret_code == 0:
                     self._progress(100, "Selesai (NVENC)")
