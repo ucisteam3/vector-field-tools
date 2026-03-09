@@ -174,6 +174,10 @@ def export_clip(
     elif mode != "landscape_fit" and mode != "podcast_smart":
         mode = "landscape_fit"
 
+    # Settings-driven audio toggles (so BGM works even if caller forgot to pass bgm_file_path)
+    if settings.get("bgm_enabled") and settings.get("bgm_file_path") and not bgm_file_path:
+        bgm_file_path = str(settings.get("bgm_file_path"))
+
     # Input args: video + optional voiceover + optional bgm
     input_args: List[str] = ["-i", effective_video_path]
     if voiceover_path:
@@ -181,8 +185,13 @@ def export_clip(
     if bgm_file_path:
         input_args.extend(["-i", bgm_file_path])
 
-    # Audio filter and extra inputs (voiceover/bgm already in input_args)
-    audio_fc, _ = build_audio_filter(settings, voiceover_path, bgm_file_path)
+    # Audio filter and extra inputs (we manage -i args here)
+    audio_pitch = float(settings.get("audio_pitch_semitones", 0) or 0)
+    wants_bgm = bool(settings.get("bgm_enabled")) and bool(bgm_file_path)
+    wants_voiceover = bool(voiceover_path)
+    wants_pitch = audio_pitch != 0
+    needs_audio_processing = wants_bgm or wants_voiceover or wants_pitch
+    audio_fc, _ = build_audio_filter(settings, voiceover_path, bgm_file_path) if needs_audio_processing else ("", [])
 
     # Heavy filters -> CPU path, audio via -map 0:a
     has_heavy = (
@@ -197,7 +206,7 @@ def export_clip(
     base_supports_gpu = mode == "podcast_smart"  # podcast_smart always allows scale_cuda path
     use_pure_gpu = use_gpu_possible and not has_heavy and base_supports_gpu
     use_cpu = not use_pure_gpu
-    use_video_only_minimal = use_cpu  # CPU path uses -map 0:a
+    use_video_only_minimal = use_cpu and not needs_audio_processing  # only passthrough audio when we don't need mixing
 
     # Number of inputs before watermark/overlay (for correct [1:v] etc.)
     n_in = len(input_args) // 2
@@ -221,6 +230,9 @@ def export_clip(
     # STEP 5 — Landscape mode safety validation
     if mode == "landscape_fit" and "boxblur" not in (fc_video or ""):
         print("[WARNING] Landscape mode not applied correctly (missing 'boxblur' in filter graph)")
+
+    print("VIDEO FILTER:", fc_video)
+    print("AUDIO FILTER:", audio_fc if audio_fc else "(none)")
 
     # Full filter: video only for CPU (audio -map 0:a), or video+audio for GPU
     if use_video_only_minimal:

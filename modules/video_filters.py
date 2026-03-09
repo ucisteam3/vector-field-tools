@@ -27,11 +27,11 @@ def append_filter(fc: str, chain: str) -> str:
 
 
 def landscape_fit() -> str:
-    """Landscape -> 9:16 via blurred background. Output label: [v_mixed]."""
+    """Landscape -> 9:16 via blurred background (no stretch). Output label: [v_mixed]."""
     return (
         "[0:v]split=2[bg][fg];"
         "[bg]scale=1080:1920,boxblur=20:10[bg_blur];"
-        "[fg]scale=1080:-1[fg_scaled];"
+        "[fg]scale=1080:1920:force_original_aspect_ratio=decrease[fg_scaled];"
         "[bg_blur][fg_scaled]overlay=(W-w)/2:(H-h)/2[v_mixed]"
     )
 
