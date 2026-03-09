@@ -937,7 +937,8 @@ class ClipExporter:
                 except Exception as e:
                     print(f"  [SOURCE CREDIT ERROR] {e}")
 
-            # Map final video
+            # Fix slow motion: -ss before -i can produce wrong PTS -> reset with setpts
+            fc_str = "[0:v]setpts=PTS-STARTPTS[v_pts];" + fc_str.replace("[0:v]", "[v_pts]")
             fc_str += f"{last_v_label}null[v_out];"
             
             # --- AUDIO PITCH (optional) ---
