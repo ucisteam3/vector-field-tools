@@ -895,21 +895,22 @@ class ClipExporter:
                     pad_duration = pad_end - pad_start
 
                 # [A/V SYNC FIX] -ss and -t MUST come AFTER -i for accurate sync.
-                # -ss before -i = keyframe seek only, causes audio ahead of video.
-                # -ss after -i = frame-accurate, both streams seek together.
                 first_input = input_args[:2]  # -i and path
                 rest_inputs = input_args[2:] if len(input_args) > 2 else []
+                # GPU: NVDEC decode + hwdownload untuk filter CPU + NVENC encode
+                hwaccel_opts = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] if encoder == "gpu" else []
+                fc = filter_complex
+                if encoder == "gpu":
+                    fc = "[0:v]hwdownload,format=nv12[v0];" + fc.replace("[0:v]", "[v0]")
                 base_cmd = [
                     'ffmpeg', '-y',
-                    '-fflags', '+genpts',        # Regenerate PTS for sync
-                    '-avoid_negative_ts', 'make_zero',  # Fix timestamp drift causing A/V desync
-                    *first_input,
-                    '-ss', str(pad_start),
-                    '-t', str(pad_duration),
+                    '-fflags', '+genpts', '-avoid_negative_ts', 'make_zero',
+                    *hwaccel_opts, *first_input,
+                    '-ss', str(pad_start), '-t', str(pad_duration),
                     *rest_inputs,
-                    '-filter_complex', filter_complex,
+                    '-filter_complex', fc,
                     '-map', '[v_out]', '-map', '[a_out]',
-                    '-max_muxing_queue_size', '1024',  # Avoid buffer drops
+                    '-max_muxing_queue_size', '1024',
                 ]
 
                 if encoder == "gpu":
@@ -1003,7 +1004,7 @@ class ClipExporter:
             if use_gpu:
                 print(f"  [GPU] Mencoba ekspor dengan NVENC...")
                 cmd = get_ffmpeg_cmd("gpu")
-                ret_code = run_ffmpeg_realtime(cmd, "GPU-NVENC", encode_dur, encoder_label="NVENC GPU")
+                ret_code = run_ffmpeg_realtime(cmd, "GPU-NVDEC+NVENC", encode_dur, encoder_label="NVDEC+NVENC GPU")
                 
                 if ret_code == 0:
                     self._progress(100, "Selesai (NVENC)")
