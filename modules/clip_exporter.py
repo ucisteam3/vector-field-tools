@@ -46,6 +46,13 @@ try:
 except ImportError:
     PODCAST_SMART_AVAILABLE = False
 
+# Import export pipeline (filter build + FFmpeg run + fallbacks)
+try:
+    from modules.export_pipeline import export_clip
+    EXPORT_PIPELINE_AVAILABLE = True
+except ImportError:
+    EXPORT_PIPELINE_AVAILABLE = False
+
 
 def _get_video_info(path: str) -> tuple[int, int, float]:
     """Get video width, height, fps via ffprobe. Returns (w, h, fps)."""
