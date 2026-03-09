@@ -115,6 +115,13 @@ class ExportClipRequest(BaseModel):
     settings: Optional[dict[str, Any]] = None
 
 
+# Export job progress store (job_id -> status)
+_export_jobs: dict[str, dict] = {}
+import threading
+import uuid
+_export_lock = threading.Lock()
+
+
 # --- API Endpoints ---
 
 @app.post("/analyze")
