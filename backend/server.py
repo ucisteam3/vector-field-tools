@@ -489,11 +489,18 @@ def _run_export_job(job_id: str, project_id: str, clip_id: int, settings: Option
     def on_progress(percent: int, message: str):
         with _export_lock:
             if job_id in _export_jobs:
-                _export_jobs[job_id]["progress"] = percent
-                _export_jobs[job_id]["message"] = message
+                j = _export_jobs[job_id]
+                j["progress"] = percent
+                j["message"] = message
+                logs = j.setdefault("logs", [])
+                entry = f"[{percent}%] {message}"
+                if not logs or logs[-1] != entry:
+                    logs.append(entry)
+                    if len(logs) > 30:
+                        logs.pop(0)
 
     with _export_lock:
-        _export_jobs[job_id] = {"progress": 0, "message": "Memulai...", "status": "running", "clip_path": None, "error": None}
+        _export_jobs[job_id] = {"progress": 0, "message": "Memulai...", "status": "running", "clip_path": None, "error": None, "logs": ["[0%] Memulai export..."]}
 
     try:
         fn = export_clip(project_id, clip_id, settings, progress_callback=on_progress)

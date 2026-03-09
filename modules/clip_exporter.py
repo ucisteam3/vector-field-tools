@@ -372,9 +372,10 @@ class ClipExporter:
 
 
             # Construct Filter Complex
-            # Check export mode: landscape_fit (blur) vs face_tracking (crop) vs podcast_smart (active speaker)
             export_mode = self.parent.custom_settings.get("export_mode", "landscape_fit")
-            print(f"  [EXPORT MODE] Using mode: {export_mode}")
+            mode_label = {"podcast_smart": "Podcast Smart", "face_tracking": "Face Tracking", "landscape_fit": "Landscape"}.get(export_mode, export_mode)
+            self._progress(3, f"Mode: {mode_label}...")
+            print(f"  [EXPORT] Mode: {export_mode}")
 
             # Podcast Smart: pre-process video with per-frame active-speaker crop
             effective_video_path = str(self.parent.video_path)
@@ -465,7 +466,7 @@ class ClipExporter:
             if export_mode == "podcast_smart" and effective_video_path != str(self.parent.video_path):
                 fc_str = "[0:v]setsar=1[v_mixed];"
             elif export_mode == "face_tracking" and MEDIAPIPE_AVAILABLE:
-                self._progress(10, "Menganalisis wajah...")
+                self._progress(10, "Face Tracking: Menganalisis wajah...")
                 print("  [FACE TRACKING] Analyzing clip segment for face positions...")
                 try:
                     # Initialize face tracker
@@ -529,7 +530,7 @@ class ClipExporter:
                         f"[0:v]setsar=1,crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920[v_mixed];"
                     )
             else:
-                self._progress(25, "Mempersiapkan efek...")
+                self._progress(25, "Mempersiapkan filter (blur/overlay)...")
                 # Landscape Fit (blur) OR podcast_smart fallback (center crop)
                 if export_mode == "face_tracking" and not MEDIAPIPE_AVAILABLE:
                     print("  [WARNING] Face tracking requires MediaPipe - using landscape fit mode")
@@ -938,8 +939,9 @@ class ClipExporter:
                 return base_cmd
 
             # Execution logic with real-time feedback
-            def run_ffmpeg_realtime(cmd, description, encode_duration=None):
-                self._progress(50, "Mengode video...")
+            def run_ffmpeg_realtime(cmd, description, encode_duration=None, encoder_label=""):
+                enc_info = f" ({encoder_label})" if encoder_label else ""
+                self._progress(50, f"Mengode video{enc_info}...")
                 print(f"  [{description}] Executing FFmpeg...")
                 import sys # Import sys for platform check
                 import re
@@ -980,7 +982,7 @@ class ClipExporter:
                                     h, mn, s, ms = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
                                     elapsed = h * 3600 + mn * 60 + s + ms / 1000.0
                                     pct = 50 + int(48 * min(1.0, elapsed / encode_duration))
-                                    self._progress(pct, f"Mengode video... {int(elapsed)}s")
+                                    self._progress(pct, f"Mengode video{enc_info}... {int(elapsed)}s")
                             # Filter interesting lines to avoid spam
                             if any(k in line for k in ["frame=", "time=", "size=", "speed="]):
                                 print(f"    [FFMPEG] {line}", end='\r')
@@ -1001,10 +1003,10 @@ class ClipExporter:
             if use_gpu:
                 print(f"  [GPU] Mencoba ekspor dengan NVENC...")
                 cmd = get_ffmpeg_cmd("gpu")
-                ret_code = run_ffmpeg_realtime(cmd, "GPU-NVENC", encode_dur)
+                ret_code = run_ffmpeg_realtime(cmd, "GPU-NVENC", encode_dur, encoder_label="NVENC GPU")
                 
                 if ret_code == 0:
-                    self._progress(100, "Selesai")
+                    self._progress(100, "Selesai (NVENC)")
                     print(f"  [SUCCESS] Klip {clip_num or ''} berhasil diekspor (GPU)")
                     if clip_num is None:
                         messagebox.showinfo("Berhasil", f"Klip berhasil diekspor (GPU):\n{output_filename}")
@@ -1015,10 +1017,10 @@ class ClipExporter:
             # CPU Fallback or Default
             print(f"  [CPU] Mengekspor dengan libx264...")
             cmd = get_ffmpeg_cmd("cpu")
-            ret_code = run_ffmpeg_realtime(cmd, "CPU-x264", encode_dur)
+            ret_code = run_ffmpeg_realtime(cmd, "CPU-x264", encode_dur, encoder_label="libx264 CPU")
             
             if ret_code == 0:
-                self._progress(100, "Selesai")
+                self._progress(100, "Selesai (CPU libx264)")
                 print(f"  [SUCCESS] Klip {clip_num or ''} berhasil diekspor (CPU)")
                 if clip_num is None:
                     messagebox.showinfo("Berhasil", f"Klip berhasil diekspor (CPU):\n{output_filename}")
