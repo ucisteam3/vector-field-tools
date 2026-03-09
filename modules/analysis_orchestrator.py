@@ -58,7 +58,8 @@ class AnalysisOrchestrator:
             # Step 1: Check Mode (Local vs URL)
             if self.parent.local_video_mode:
                 print(f"[STEP 1] Menggunakan File Lokal: {url}")
-                self.parent.progress_var.set("Mode Lokal: Menggunakan video dari disk...")
+                if getattr(self.parent, "progress_var", None):
+                    self.parent.progress_var.set("Mode Lokal: Menggunakan video dari disk...")
                 video_path = url # Input is already the file path
                 
                 # Validation
@@ -84,7 +85,8 @@ class AnalysisOrchestrator:
             else:
                 # Step 1: Download video (URL Mode)
                 print("[STEP 1] Mengunduh video...")
-                self.parent.progress_var.set("Sedang mengunduh video dari YouTube...")
+                if getattr(self.parent, "progress_var", None):
+                    self.parent.progress_var.set("Sedang mengunduh video dari YouTube...")
                 video_path = self.parent.download_youtube_video(url)
             
             if not video_path:
@@ -196,10 +198,13 @@ class AnalysisOrchestrator:
                             
                             if formatted_text:
                                 def _update_ui(t):
-                                    self.parent.manual_transcript_text.delete("1.0", tk.END)
-                                    self.parent.manual_transcript_text.insert(tk.END, t)
+                                    mt = getattr(self.parent, "manual_transcript_text", None)
+                                    if mt:
+                                        mt.delete("1.0", END)
+                                        mt.insert(END, t)
                                 
-                                self.parent.root.after(0, lambda: _update_ui(formatted_text))
+                                if getattr(self.parent, "root", None):
+                                    self.parent.root.after(0, lambda: _update_ui(formatted_text))
                                 manual_text = formatted_text
                                 print(f"  [INFO] Berhasil memuat {len(sub_transcriptions)} baris subtitle dari sidecar.")
                             else:
@@ -249,7 +254,8 @@ class AnalysisOrchestrator:
 
             if manual_text:
                 print("\n[FAST MODE] Transkrip manual/AI terdeteksi! Melewati scanning visual...")
-                self.parent.progress_var.set("Mode Cepat: Memproses transkrip manual...")
+                if getattr(self.parent, "progress_var", None):
+                    self.parent.progress_var.set("Mode Cepat: Memproses transkrip manual...")
                 
                 # [HOOK 3s] Jika belum ada sub_transcriptions (no sidecar), coba parse manual untuk deteksi hook
                 if not getattr(self.parent, 'sub_transcriptions', None) or not self.parent.sub_transcriptions:
@@ -344,8 +350,10 @@ class AnalysisOrchestrator:
             
             # Step 6: Update UI
             print("\n[STEP 6] Updating UI...")
-            self.parent.root.after(0, self.parent.update_results_ui)
-            self.parent.progress_var.set("Analysis complete!")
+            if getattr(self.parent, "root", None) and callable(getattr(self.parent, "update_results_ui", None)):
+                self.parent.root.after(0, self.parent.update_results_ui)
+            if getattr(self.parent, "progress_var", None):
+                self.parent.progress_var.set("Analysis complete!")
             print("\n" + "="*60)
             print("Analysis Complete!")
             print("="*60 + "\n")
@@ -360,10 +368,14 @@ class AnalysisOrchestrator:
             traceback.print_exc()
             print("="*60 + "\n")
             
-            self.parent.root.after(0, lambda msg=error_msg: messagebox.showerror("Error", f"Analysis failed: {msg}"))
-            self.parent.progress_var.set(f"Error: {error_msg}")
+            if getattr(self.parent, "root", None):
+                self.parent.root.after(0, lambda msg=error_msg: messagebox.showerror("Error", f"Analysis failed: {msg}"))
+            if getattr(self.parent, "progress_var", None):
+                self.parent.progress_var.set(f"Error: {error_msg}")
         finally:
             self.parent.is_analyzing = False
-            self.parent.download_btn.config(state='normal')
-            self.parent.progress_bar.stop()
+            if getattr(self.parent, "download_btn", None):
+                self.parent.download_btn.config(state='normal')
+            if getattr(self.parent, "progress_bar", None):
+                self.parent.progress_bar.stop()
 
