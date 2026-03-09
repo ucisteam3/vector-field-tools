@@ -416,9 +416,8 @@ class ClipExporter:
             print(f"  [EXPORT] Mode: {export_mode}")
 
             # Heavy filters force CPU fallback (no CUDA equivalents: zoompan, subtitles, drawtext, boxblur, overlay)
-            # Landscape mode selalu pakai boxblur+overlay -> harus CPU agar export berhasil
+            # Landscape pakai boxblur -> hybrid path (NVDEC+CPU filters+NVENC) lebih cepat dari full CPU
             has_heavy_filters = (
-                export_mode == "landscape_fit" or
                 self.parent.custom_settings.get("dynamic_zoom_enabled", False) or
                 bool(ass_path) or
                 self.parent.custom_settings.get("watermark_enabled", False) or
@@ -937,22 +936,21 @@ class ClipExporter:
                 except Exception as e:
                     print(f"  [SOURCE CREDIT ERROR] {e}")
 
-            # Fix slow motion/A-V desync: setpts at start (trim), fps+setpts at end (normalize after zoompan etc)
+            # setpts at start: reset PTS after -ss trim (fix slow-motion glitch)
             fc_str = "[0:v]setpts=PTS-STARTPTS[v_pts];" + fc_str.replace("[0:v]", "[v_pts]")
-            # Force 30fps + reset PTS at end to avoid VFR/timestamp glitches from zoompan
-            fc_str += f"{last_v_label}fps=30,setpts=PTS-STARTPTS[v_out];"
+            # Simple passthrough to [v_out] - NO fps filter (sangat lambat, bisa 20 menit untuk 30 detik)
+            fc_str += f"{last_v_label}null[v_out];"
             
             # --- AUDIO PITCH (optional) ---
-            # aresample=async=1:first_pts=0 syncs audio timestamps to video (fix A/V desync)
             pitch_enabled = self.parent.custom_settings.get("audio_pitch_enabled", False)
             pitch_semitones = float(self.parent.custom_settings.get("audio_pitch_semitones", 0))
             pitch_semitones = max(-4, min(4, pitch_semitones))
             if pitch_enabled and pitch_semitones != 0:
                 rate_in = 48000 * (2 ** (pitch_semitones / 12.0))
                 print(f"  [AUDIO PITCH] {pitch_semitones:+.1f} semitones -> asetrate={rate_in:.0f},aresample=48000")
-                fc_str += f"{audio_filter}[a_pitch_in];[a_pitch_in]asetrate={rate_in:.0f},aresample=48000[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
+                fc_str += f"{audio_filter}[a_pitch_in];[a_pitch_in]asetrate={rate_in:.0f},aresample=48000[a_out]"
             else:
-                fc_str += f"{audio_filter}[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
+                fc_str += f"{audio_filter}[a_out]"
                 
             # GPU vs CPU pipeline
             use_pure_gpu = use_pure_gpu_possible and not has_heavy_filters and base_supports_gpu
@@ -965,7 +963,7 @@ class ClipExporter:
             elif use_pure_gpu_possible and not has_heavy_filters and not base_supports_gpu:
                 # GPU decode/encode with CPU filters (hwdownload -> filters -> hwupload)
                 fc_str = "[0:v]hwdownload,format=nv12[v0];" + fc_str.replace("[0:v]", "[v0]")
-                fc_str = fc_str.replace(f"{last_v_label}fps=30,setpts=PTS-STARTPTS[v_out];", f"{last_v_label}fps=30,setpts=PTS-STARTPTS,hwupload_cuda[v_out];")
+                fc_str = fc_str.replace(f"{last_v_label}null[v_out];", f"{last_v_label}hwupload_cuda[v_out];")
                 filter_complex = fc_str
                 use_cpu = False  # Still using NVENC
                 print("  [GPU] Hybrid: NVDEC + CPU filters + NVENC")
@@ -1010,7 +1008,7 @@ class ClipExporter:
                     ])
                 else:
                     base_cmd.extend([
-                        '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
+                        '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
                         '-maxrate', '8M', '-ar', '48000', str(output_path)
                     ])
                 return base_cmd
