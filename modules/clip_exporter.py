@@ -517,8 +517,6 @@ class ClipExporter:
                         pass
                 else:
                     print("  [PODCAST SMART] Using center crop (tracking disabled)")
-                # except Exception as e:
-                #     print(f"  [PODCAST SMART ERROR] {e} - falling back to center crop")
 
             # Use effective video path for inputs (podcast_smart replaces with pre-cropped temp)
             if input_args[0] == '-i':
@@ -536,44 +534,8 @@ class ClipExporter:
                     fc_str = "[0:v]setsar=1[v_mixed];"
             elif export_mode == "face_tracking":
                 # Face tracking disabled: MediaPipe model loading and frame scan unstable/slow. Use center crop.
-                crop_positions = None
-                if crop_positions:
-                        median_x = int(np.median(crop_positions))
-                        
-                        # Get video dimensions
-                        cap = cv2.VideoCapture(str(self.parent.video_path))
-                        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        cap.release()
-                        
-                        # Calculate 9:16 crop box
-                        crop_height = frame_height
-                        crop_width = int(crop_height * 9 / 16)
-                        
-                        if crop_width > frame_width:
-                            crop_width = frame_width
-                            crop_height = int(crop_width * 16 / 9)
-                        
-                        crop_x = median_x - crop_width // 2
-                        crop_x = max(0, min(crop_x, frame_width - crop_width))
-                        crop_y = (frame_height - crop_height) // 2
-                        
-                        print(f"  [FACE TRACKING] Crop: {crop_width}x{crop_height} at ({crop_x}, {crop_y})")
-                        # crop has no CUDA version - use hybrid (hwdownload->crop->scale->hwupload) when GPU
-                        fc_str = (
-                            f"[0:v]setsar=1,crop={crop_width}:{crop_height}:{crop_x}:{crop_y},scale=1080:1920[v_mixed];"
-                        )
-                    else:
-                        # No faces detected - fallback to center crop (expressions, CPU only)
-                        print("  [FACE TRACKING] No faces detected - using center crop")
-                        fc_str = (
-                            f"[0:v]setsar=1,crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920[v_mixed];"
-                        )
-                except Exception as e:
-                    print(f"  [FACE TRACKING ERROR] {e} - falling back to center crop")
-                    fc_str = (
-                        f"[0:v]setsar=1,crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920[v_mixed];"
-                    )
+                print("  [FACE TRACKING] Using center crop (tracking disabled)")
+                fc_str = "[0:v]setsar=1,crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920[v_mixed];"
             else:
                 self._progress(25, "Mempersiapkan filter (blur/overlay)...")
                 # Landscape Fit (blur) OR podcast_smart fallback (center crop)
