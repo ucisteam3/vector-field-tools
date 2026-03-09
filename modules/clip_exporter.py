@@ -440,8 +440,7 @@ class ClipExporter:
                         '-fflags', '+genpts', '-avoid_negative_ts', 'make_zero',
                         '-max_muxing_queue_size', '1024', str(temp_full)]
                     if use_gpu_mux:
-                        mux_cmd = mux_base[:4] + ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] + mux_base[4:]
-                        mux_cmd = mux_cmd[:4] + ['-c:v', 'h264_nvenc', '-preset', 'p5'] + mux_cmd[6:]
+                        mux_cmd = mux_base[:4] + ['-c:v', 'h264_nvenc', '-preset', 'p5', '-b:v', '6M'] + mux_base[4:]
                     else:
                         mux_cmd = mux_base[:4] + ['-c:v', 'libx264', '-preset', 'fast', '-crf', '23'] + mux_base[4:]
                     r = subprocess.run(mux_cmd, capture_output=True, text=True, creationflags=0x08000000 if os.name == "nt" else 0)
