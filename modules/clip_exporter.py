@@ -536,13 +536,15 @@ class ClipExporter:
                 print("  [FACE TRACKING] Fallback to safe center crop")
                 fc_str = "[0:v]setsar=1,crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920[v_mixed];"
             else:
-                self._progress(25, "Mempersiapkan filter (blur/overlay)...")
-                # Landscape Fit (blur) OR podcast_smart fallback (center crop)
+                self._progress(25, "Mempersiapkan filter...")
                 if export_mode == "face_tracking" and not MEDIAPIPE_AVAILABLE:
                     print("  [WARNING] Face tracking requires MediaPipe - using landscape fit mode")
                 if export_mode == "podcast_smart" and effective_video_path == str(self.parent.video_path):
                     print("  [PODCAST SMART] Fallback - using 9:16 center crop")
                     fc_str = "[0:v]setsar=1,crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920[v_mixed];"
+                elif export_mode == "landscape_fit":
+                    # Scale to fit 1080x1920 with pad (letterbox/pillarbox) — avoids boxblur/overlay for reliability
+                    fc_str = "[0:v]setsar=1,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black[v_mixed];"
                 else:
                     fc_str = (
                         f"[0:v]setsar=1,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:10[bg_v];"
