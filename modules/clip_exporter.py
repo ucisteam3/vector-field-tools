@@ -940,12 +940,14 @@ class ClipExporter:
             else:
                 fc_str += f"{audio_filter}[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
             
-            # Minimal filter (base video + audio only) for "Filter not found" retry
+            # Video-only minimal (no anull/aresample) for FFmpeg builds that lack those filters
+            minimal_fc_str_video_only = base_fc_str + base_last_v_label + "[v_out];"
             minimal_fc_str = base_fc_str + base_last_v_label + "[v_out];" + audio_filter + "[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
                 
             # GPU vs CPU pipeline
             use_pure_gpu = use_pure_gpu_possible and not has_heavy_filters and base_supports_gpu
             use_cpu = not use_pure_gpu
+            use_video_only_minimal = False
 
             filter_complex_cpu = None  # for NVENC fallback
             if use_pure_gpu:
@@ -961,12 +963,13 @@ class ClipExporter:
                 use_cpu = False  # Still using NVENC
                 print("  [GPU] Hybrid: NVDEC + CPU filters + NVENC")
             else:
-                # Intentional CPU fallback: use minimal filter to avoid "Filter not found" on builds without zoompan/hflip/libass
-                filter_complex = minimal_fc_str
-                filter_complex_cpu = minimal_fc_str
+                # CPU fallback: video-only filter (no anull/aresample) to avoid "Filter not found"
+                use_video_only_minimal = True
+                filter_complex = minimal_fc_str_video_only
+                filter_complex_cpu = minimal_fc_str_video_only
                 use_cpu = True
                 if has_heavy_filters:
-                    print("  [CPU] Fallback: menggunakan filter minimal (tanpa zoom/flip/subtitle/watermark) agar export berhasil.")
+                    print("  [CPU] Fallback: filter video-only, audio direct (tanpa zoom/subtitle/watermark).")
             use_gpu_encode = use_pure_gpu or (use_pure_gpu_possible and not use_cpu)
 
             def get_ffmpeg_cmd(force_cpu=False):
@@ -984,13 +987,14 @@ class ClipExporter:
                 hwaccel = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] if use_gpu_this else []
                 if effective_video_path == str(self.parent.video_path):
                     print(f"  [CLIP-FIRST] Processing only {pad_duration:.1f}s segment (no full-video decode)")
+                map_a = '0:a' if use_video_only_minimal else '[a_out]'
                 base_cmd = [
                     'ffmpeg', '-y', '-fflags', '+genpts', '-avoid_negative_ts', 'make_zero',
                     '-ss', str(pad_start), '-t', str(pad_duration),
                     *hwaccel, *first_input,
                     *rest_inputs,
                     '-filter_complex', fc,
-                    '-map', '[v_out]', '-map', '[a_out]',
+                    '-map', '[v_out]', '-map', map_a,
                     '-max_muxing_queue_size', '1024',
                 ]
                 if use_gpu_this:
