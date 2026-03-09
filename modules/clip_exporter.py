@@ -586,7 +586,7 @@ class ClipExporter:
             use_pure_gpu_possible = _gpu_available() and getattr(self.parent, 'gpu_var', None) and self.parent.gpu_var.get()
             base_supports_gpu = False
 
-            # --- Mode 1: Podcast Smart (preprocessed 1080x1920) — output 9:16 ---
+            # --- Mode 1: Podcast Smart (preprocessed 1080x1920) — output 9:16, only setsar ---
             if export_mode == "podcast_smart" and effective_video_path != str(self.parent.video_path):
                 base_supports_gpu = True
                 if use_pure_gpu_possible and not has_heavy_filters:
@@ -594,17 +594,18 @@ class ClipExporter:
                 else:
                     fc_str = "[0:v]setsar=1[v_mixed];"
                 print("  [MODE] Podcast Smart — video sudah 9:16 dari preprocessing")
-            # --- Mode 2: Portrait / Face Tracking — center crop 9:16 ---
+            # --- Mode 2: Portrait / Face Tracking — center crop 9:16 (safer crop expr) ---
             elif export_mode == "face_tracking":
-                fc_str = "[0:v]setsar=1,crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920[v_mixed];"
+                fc_str = "[0:v]setsar=1,crop=ih*9/16:ih:(iw-(ih*9/16))/2:0,scale=1080:1920[v_mixed];"
                 print("  [MODE] 9:16 Portrait — center crop 1080x1920")
             # --- Mode 3: Landscape Fit + Podcast fallback ---
             else:
                 self._progress(25, "Mempersiapkan filter...")
                 if export_mode == "podcast_smart" and effective_video_path == str(self.parent.video_path):
                     print("  [MODE] Podcast Smart fallback — 9:16 center crop")
-                    fc_str = "[0:v]setsar=1,crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920[v_mixed];"
+                    fc_str = "[0:v]setsar=1,crop=ih*9/16:ih:(iw-(ih*9/16))/2:0,scale=1080:1920[v_mixed];"
                 elif export_mode == "landscape_fit":
+                    # Letterboxed 9:16: scale to fit then pad
                     fc_str = "[0:v]setsar=1,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black[v_mixed];"
                     print("  [MODE] Landscape Fit — letterbox/pillarbox 9:16 (1080x1920)")
                 else:
