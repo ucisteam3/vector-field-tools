@@ -525,12 +525,27 @@ def find_best_boundary_near(target_time: float, cues: List[SubtitleCue],
     return best_time
 
 
+def _adaptive_duration_bounds(duration_sec: float) -> Tuple[float, float]:
+    """
+    Variable clip duration: hooks 8-15s, short 15-25s, discussion 25-40s, deep 40-60s.
+    Returns (min_duration, max_duration) for this segment.
+    """
+    if duration_sec <= 15:
+        return 8.0, 15.0   # Hooks
+    if duration_sec <= 25:
+        return 15.0, 25.0  # Short explanation
+    if duration_sec <= 40:
+        return 25.0, 40.0  # Discussion
+    return 25.0, min(60.0, MAX_CLIP_DURATION_SEC)  # Deep commentary, cap 60s
+
+
 def refine_segment_boundaries(segment: Dict, cues: List[SubtitleCue],
                               min_duration: float = 15.0, max_duration: float = 60.0) -> Dict:
     """
-    Refine a segment's start/end times to align with subtitle boundaries.
-    - Start: pre-roll buffer (max 4s) to include conversation setup, then skip filler
-    - End: extend until sentence completes (max +5s), prefer punctuation at cue boundary
+    Refine a segment's start/end to natural boundaries.
+    - Start: hook-first (hook_time - 2s, snap to sentence start) or skip filler; never mid-sentence.
+    - End: extend until sentence complete or pause >= 600ms; stop at pause > 1s or 60s.
+    - Adaptive duration: 8-15 (hooks), 15-25, 25-40, 40-60s.
     """
     if not cues:
         return segment
@@ -538,14 +553,26 @@ def refine_segment_boundaries(segment: Dict, cues: List[SubtitleCue],
     original_start = segment['start']
     original_end = segment['end']
     original_duration = original_end - original_start
+    # Adaptive bounds based on content length
+    min_dur, max_dur = _adaptive_duration_bounds(original_duration)
+    max_dur = min(max_dur, MAX_CLIP_DURATION_SEC)
     
-    # [PART 1] Pre-roll buffer, then skip filler intro (move start to first meaningful sentence)
-    buffer_start = max(0.0, original_start - PRE_ROLL_BUFFER_SEC)
-    new_start = find_best_boundary_near(buffer_start, cues, search_window=2.0, is_start=True)
-    new_start = refine_segment_start(new_start, original_end, cues, max_shift=REFINE_START_MAX_SHIFT_SEC)
+    # [STEP 1 & 2] Hook-first start: start near hook, never mid-sentence
+    hook_time = segment.get('_hook_time')
+    if hook_time is not None:
+        new_start = refine_segment_start_hook_first(
+            float(hook_time), original_end, cues,
+            pre_roll_sec=2.0, max_shift=REFINE_START_MAX_SHIFT_SEC
+        )
+    else:
+        buffer_start = max(0.0, original_start - PRE_ROLL_BUFFER_SEC)
+        new_start = find_best_boundary_near(buffer_start, cues, search_window=2.0, is_start=True)
+        new_start = refine_segment_start(new_start, original_end, cues, max_shift=REFINE_START_MAX_SHIFT_SEC)
     
-    # [PART 2 & 3] Refine end: extend until sentence complete (max +5s), never cut mid-sentence
-    min_end = refine_segment_end(original_end, cues, max_extension=SENTENCE_END_MAX_EXTENSION_SEC)
+    # [STEP 3 & 4] Natural end: sentence end or pause >= 600ms; cap extension at 60s
+    max_extension = min(SENTENCE_END_MAX_EXTENSION_SEC, max_dur - (original_end - new_start))
+    max_extension = max(2.0, max_extension)
+    min_end = refine_segment_end(original_end, cues, max_extension=max_extension)
     
     new_end = find_best_boundary_near(
         max(original_end, min_end), cues, search_window=3.0, is_start=False,
@@ -554,34 +581,39 @@ def refine_segment_boundaries(segment: Dict, cues: List[SubtitleCue],
     
     new_duration = new_end - new_start
     
-    # Validate duration constraints
-    if new_duration < min_duration:
-        # Try extending end first
-        new_end = new_start + min_duration
-        new_end = find_best_boundary_near(new_end, cues, search_window=3.0, is_start=False)
+    # Enforce minimum (extend to sentence end if needed)
+    if new_duration < min_dur:
+        try_end = new_start + min_dur
+        try_end = min(try_end, new_start + MAX_CLIP_DURATION_SEC)
+        new_end = find_best_boundary_near(try_end, cues, search_window=3.0, is_start=False)
         new_duration = new_end - new_start
-        
-        # If still too short, revert to original
-        if new_duration < min_duration:
+        if new_duration < 8.0:  # Absolute minimum 8s
             return segment
     
-    if new_duration > max_duration:
-        # Try trimming from end
-        new_end = new_start + max_duration
+    if new_duration > max_dur:
+        new_end = new_start + max_dur
         new_end = find_best_boundary_near(new_end, cues, search_window=3.0, is_start=False)
         new_duration = new_end - new_start
-        
-        # If still too long, revert to original
-        if new_duration > max_duration:
-            return segment
     
-    # Create refined segment
+    # Sentence safety: mark if clip ends on incomplete phrase (for filtering)
+    _incomplete = False
+    for c in cues:
+        if c.start <= new_end <= c.end + 0.5:
+            if not is_sentence_ending(c.text):
+                _incomplete = True
+            break
+        if c.end >= new_end - 0.3 and c.start <= new_end + 0.3:
+            if not is_sentence_ending(c.text):
+                _incomplete = True
+            break
+    
     refined = segment.copy()
     refined['start'] = new_start
     refined['end'] = new_end
     refined['_refined'] = True
     refined['_original_start'] = original_start
     refined['_original_end'] = original_end
+    refined['_incomplete_sentence'] = _incomplete
     
     return refined
 

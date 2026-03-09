@@ -954,6 +954,7 @@ class AISegmentAnalyzer:
                     "controversy_score": controversy,
                     "info_density_score": info_density,
                     "hook": window_text[:80].strip(),
+                    "_hook_time": start,
                 })
             start += step_size
 
@@ -1025,7 +1026,8 @@ class AISegmentAnalyzer:
                     continue
                 openai_segments.append({
                     "start": clip_start, "end": clip_end,
-                    "viral_score": base_score, "hook": text[:80]
+                    "viral_score": base_score, "hook": text[:80],
+                    "_hook_time": hook_start,
                 })
 
             # Window scanning for more candidates (18s, 4s overlap)
@@ -1056,7 +1058,8 @@ class AISegmentAnalyzer:
                 if dur >= self.CLIP_MIN_DURATION_SEC:
                     openai_segments.append({
                         "start": clip_start, "end": clip_end,
-                        "viral_score": viral_score, "hook": (window_text[:80] or "").strip()
+                        "viral_score": viral_score, "hook": (window_text[:80] or "").strip(),
+                        "_hook_time": start_sec,
                     })
 
             openai_segments.sort(key=lambda x: x.get("viral_score", 0), reverse=True)
@@ -1154,7 +1157,7 @@ class AISegmentAnalyzer:
             # Content-based adjustment: boost emotional/dramatic moments, penalize intro-only segments
             viral_score_val = int(item.get("viral_score", 0))
             viral_score_val = self._adjust_viral_score_by_content(viral_score_val, full_seg_text)
-            # Ranking: 0.5*viral + 0.3*hook + 0.2*activity (activity=75 default for AI-selected moments)
+            # STEP 9 — final_score combines: viral (emotion, argument, keyword, emphasis), hook, activity
             activity_score = 75
             final_score_val = round(
                 viral_score_val * 0.5 + hook_score_val * 0.3 + activity_score * 0.2
@@ -1206,9 +1209,10 @@ class AISegmentAnalyzer:
                 "caption": caption,
                 "keywords": keywords,
                 "hashtags": hashtags,
+                "_hook_time": item.get("_hook_time"),
             }
 
-        # Dedupe by >60% overlap, keep higher final_score
+        # Dedupe by >60% overlap, keep higher final_score; remove low quality (STEP 10)
         if viral_segments:
             seg_list = list(viral_segments.items())
             seg_list.sort(key=lambda x: x[1].get("final_score", 0), reverse=True)
@@ -1223,7 +1227,9 @@ class AISegmentAnalyzer:
                         overlap_any = True
                         break
                 if not overlap_any:
-                    keep_ids.append(kid)
+                    dur = seg["end"] - seg["start"]
+                    if dur >= 8.0 and seg.get("final_score", 0) >= 5:
+                        keep_ids.append(kid)
             viral_segments = {k: viral_segments[k] for k in keep_ids if k in viral_segments}
 
         if viral_segments:
@@ -1250,7 +1256,7 @@ class AISegmentAnalyzer:
                 
                 if subtitle_path:
                     print(f"  [SMART] Refining boundaries using subtitles: {os.path.basename(subtitle_path)}")
-                    # Convert dict to list for refinement
+                    # Convert dict to list for refinement (pass _hook_time for hook-first start)
                     segments_list = [
                         {'start': v['start'], 'end': v['end'], 'text': v['text'],
                          'segment_transcript': v.get('segment_transcript', ''),
@@ -1258,13 +1264,24 @@ class AISegmentAnalyzer:
                          'viral_score': v.get('viral_score', 0), 'hook_score': v.get('hook_score', 0),
                          'final_score': v.get('final_score', 0), 'clickbait_title': v.get('clickbait_title', ''),
                          'caption': v.get('caption', ''), 'keywords': v.get('keywords', []), 'hashtags': v.get('hashtags', []),
-                         '_id': k}
+                         '_id': k, '_hook_time': v.get('_hook_time')}
                         for k, v in viral_segments.items()
                     ]
                     refined_list, stats = refine_all_segments(segments_list, subtitle_path,
-                                                             min_duration=float(self.CLIP_MIN_DURATION_SEC),
-                                                             max_duration=float(self.CLIP_MAX_DURATION_SEC))
+                                                             min_duration=8.0,
+                                                             max_duration=60.0)
                     by_id = {s['_id']: s for s in segments_list}
+                    # [STEP 10] Remove low quality: incomplete sentence, very low score, < 8s
+                    MIN_CLIP_DURATION_SEC = 8.0
+                    MIN_FINAL_SCORE = 5
+                    refined_list = [
+                        seg for seg in refined_list
+                        if (seg['end'] - seg['start']) >= MIN_CLIP_DURATION_SEC
+                        and seg.get('final_score', 0) >= MIN_FINAL_SCORE
+                        and not seg.get('_incomplete_sentence', False)
+                    ]
+                    # [STEP 8] Sort by final_score descending (highest first)
+                    refined_list.sort(key=lambda s: (s.get('final_score', 0), -(s['end'] - s['start'])), reverse=True)
                     viral_segments = {}
                     for seg in refined_list:
                         orig = by_id.get(seg['_id'], {})
