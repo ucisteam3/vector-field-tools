@@ -1,10 +1,71 @@
 """
 FFmpeg runner — execute FFmpeg with logging and error capture.
+Also provides get_video_info, gpu_available, ffmpeg_has_filters for pipeline use.
 """
 
 import os
+import re
 import subprocess
 import sys
+from typing import Tuple
+
+
+def get_video_info(path: str) -> Tuple[int, int, float]:
+    """Get video width, height, fps via ffprobe. Returns (w, h, fps)."""
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=width,height,r_frame_rate", "-of", "csv=p=0", path],
+            capture_output=True, text=True, timeout=10,
+            creationflags=0x08000000 if os.name == "nt" else 0,
+        )
+        if r.returncode == 0 and r.stdout:
+            parts = r.stdout.strip().split(",")
+            w, h = int(parts[0]), int(parts[1])
+            fps = 30.0
+            if len(parts) >= 3 and "/" in parts[2]:
+                num, den = parts[2].split("/")
+                if int(den) != 0:
+                    fps = int(num) / int(den)
+            return w, h, fps
+    except Exception:
+        pass
+    return 1920, 1080, 30.0
+
+
+def gpu_available() -> bool:
+    """Detect GPU via ffmpeg -hwaccels."""
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-hwaccels"],
+            capture_output=True, text=True, timeout=5,
+            creationflags=0x08000000 if os.name == "nt" else 0,
+        )
+        out = (r.stdout or "") + (r.stderr or "")
+        return "cuda" in out.lower()
+    except Exception:
+        return False
+
+
+_ffmpeg_filters_cache = None
+
+
+def ffmpeg_has_filters(*names: str) -> dict:
+    """Check which of the given filter names exist in this FFmpeg build."""
+    global _ffmpeg_filters_cache
+    if _ffmpeg_filters_cache is None:
+        try:
+            r = subprocess.run(
+                ["ffmpeg", "-filters"],
+                capture_output=True, text=True, timeout=10,
+                creationflags=0x08000000 if os.name == "nt" else 0,
+            )
+            out = (r.stdout or "") + (r.stderr or "")
+            _ffmpeg_filters_cache = out.lower()
+        except Exception:
+            _ffmpeg_filters_cache = ""
+    out = _ffmpeg_filters_cache
+    return {n: bool(re.search(r"\b" + re.escape(n.lower()) + r"\b", out)) for n in names}
 
 
 def run_ffmpeg(

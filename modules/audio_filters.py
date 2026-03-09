@@ -6,9 +6,8 @@ from typing import List, Tuple, Optional
 
 
 def passthrough_audio() -> Tuple[str, List[str]]:
-    """Passthrough: [0:a] -> aresample -> [a_out]. Extra inputs: []."""
-    # Keep audio in sync with video
-    return "[0:a]aresample=async=1:first_pts=0[a_out]", []
+    """Passthrough: [0:a]anull -> aresample -> [a_out]. Extra inputs: []."""
+    return "[0:a]anull[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]", []
 
 
 def mix_voiceover(voiceover_path: str) -> Tuple[str, List[str]]:
