@@ -90,7 +90,15 @@ class AIEngine:
         """
         self.parent = parent
         self._openai_client = None
-        api_key = load_openai_key()
+        api_key = None
+        try:
+            # Prefer keys from WebAppContext/settings (multi-key rotation)
+            if parent and hasattr(parent, "get_openai_key"):
+                api_key = parent.get_openai_key()
+        except Exception:
+            api_key = None
+        if not api_key:
+            api_key = load_openai_key()
         if OPENAI_AVAILABLE and api_key:
             try:
                 self._openai_client = OpenAI(api_key=api_key)
@@ -103,6 +111,34 @@ class AIEngine:
             self.openai_available = False
             if not OPENAI_AVAILABLE:
                 print("[OPENAI] Package 'openai' not installed. Run: pip install openai")
+
+    def _maybe_rotate_openai_on_error(self, err: Exception) -> bool:
+        """Rotate OpenAI key only when the current key errors/unusable."""
+        if not self.parent or not hasattr(self.parent, "rotate_openai_api_key"):
+            return False
+        # Only rotate for auth/quota/rate-limit style failures
+        msg = str(err).lower()
+        if any(k in msg for k in ["401", "invalid api key", "incorrect api key", "quota", "rate limit", "429", "insufficient_quota"]):
+            try:
+                if hasattr(self.parent, "rotate_on_error") and not self.parent.rotate_on_error.get("openai", True):
+                    return False
+            except Exception:
+                pass
+            try:
+                rotated = self.parent.rotate_openai_api_key()
+                if rotated:
+                    # Re-init client with new key
+                    try:
+                        api_key = self.parent.get_openai_key() if hasattr(self.parent, "get_openai_key") else None
+                        if api_key and OPENAI_AVAILABLE:
+                            self._openai_client = OpenAI(api_key=api_key)
+                            self.openai_available = True
+                    except Exception:
+                        pass
+                return rotated
+            except Exception:
+                return False
+        return False
     
     def clean_viral_title(self, title):
         """Hard filter to strip forbidden repetitive words (Gila, Parah, etc)"""

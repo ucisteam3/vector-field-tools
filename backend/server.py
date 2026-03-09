@@ -27,6 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, Any
+import json
 
 from backend.project_manager import (
     create_project,
@@ -131,6 +132,16 @@ class ExportClipRequest(BaseModel):
     settings: Optional[dict[str, Any]] = None
 
 
+class ApiKeysPayload(BaseModel):
+    openai: list[str] = []
+    gemini: list[str] = []
+    anthropic: list[str] = []
+    llama: list[str] = []
+    deepseek: list[str] = []
+    groq: list[str] = []
+    rotate_on_error: dict[str, bool] = {}
+
+
 # Export job progress store (job_id -> status)
 _export_jobs: dict[str, dict] = {}
 import threading
@@ -139,6 +150,94 @@ _export_lock = threading.Lock()
 
 
 # --- API Endpoints ---
+
+def _load_root_config() -> dict:
+    cfg_path = PROJECT_ROOT / "config.json"
+    if not cfg_path.exists():
+        return {}
+    try:
+        return json.loads(cfg_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_root_config(cfg: dict) -> None:
+    cfg_path = PROJECT_ROOT / "config.json"
+    cfg_path.write_text(json.dumps(cfg, indent=4, ensure_ascii=False), encoding="utf-8")
+
+
+def _normalize_key_lines(keys: list[str]) -> list[str]:
+    out: list[str] = []
+    for k in keys or []:
+        if not isinstance(k, str):
+            continue
+        s = k.strip()
+        if not s:
+            continue
+        out.append(s)
+    # de-dupe preserve order
+    seen = set()
+    uniq: list[str] = []
+    for k in out:
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(k)
+    return uniq
+
+
+@app.get("/settings/api_keys")
+def get_api_keys():
+    """Get stored API keys (1 per line in UI). Local-only convenience, returned raw."""
+    cfg = _load_root_config()
+    api = cfg.get("api_keys") or {}
+    rotate = cfg.get("rotate_on_error") or {}
+    # Back-compat with older fields
+    if "gemini" not in api and cfg.get("user_gemini_keys"):
+        api["gemini"] = cfg.get("user_gemini_keys") or []
+    if "groq" not in api and cfg.get("user_groq_keys"):
+        api["groq"] = cfg.get("user_groq_keys") or []
+    return {
+        "openai": api.get("openai", []),
+        "gemini": api.get("gemini", []),
+        "anthropic": api.get("anthropic", []),
+        "llama": api.get("llama", []),
+        "deepseek": api.get("deepseek", []),
+        "groq": api.get("groq", []),
+        "rotate_on_error": {
+            "openai": bool(rotate.get("openai", True)),
+            "gemini": bool(rotate.get("gemini", True)),
+            "anthropic": bool(rotate.get("anthropic", True)),
+            "llama": bool(rotate.get("llama", True)),
+            "deepseek": bool(rotate.get("deepseek", True)),
+            "groq": bool(rotate.get("groq", True)),
+        },
+    }
+
+
+@app.post("/settings/api_keys")
+def save_api_keys(payload: ApiKeysPayload):
+    """Save API keys to root config.json. Rotation is only attempted when a key errors."""
+    cfg = _load_root_config()
+    api = cfg.get("api_keys") or {}
+    api["openai"] = _normalize_key_lines(payload.openai)
+    api["gemini"] = _normalize_key_lines(payload.gemini)
+    api["anthropic"] = _normalize_key_lines(payload.anthropic)
+    api["llama"] = _normalize_key_lines(payload.llama)
+    api["deepseek"] = _normalize_key_lines(payload.deepseek)
+    api["groq"] = _normalize_key_lines(payload.groq)
+    cfg["api_keys"] = api
+    # Keep back-compat fields in sync for existing code paths
+    cfg["user_gemini_keys"] = api.get("gemini", [])
+    cfg["user_groq_keys"] = api.get("groq", [])
+    rot = cfg.get("rotate_on_error") or {}
+    incoming = payload.rotate_on_error or {}
+    for k in ["openai", "gemini", "anthropic", "llama", "deepseek", "groq"]:
+        if k in incoming:
+            rot[k] = bool(incoming[k])
+    cfg["rotate_on_error"] = rot
+    _save_root_config(cfg)
+    return {"ok": True}
 
 @app.post("/analyze")
 def analyze(req: AnalyzeRequest):

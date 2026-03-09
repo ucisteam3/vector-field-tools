@@ -71,6 +71,32 @@ class WebAppContext:
         self.local_video_mode = False
 
         # Config/API state (for AI modules)
+        self.api_keys = {
+            "openai": [],
+            "gemini": [],
+            "anthropic": [],
+            "llama": [],
+            "deepseek": [],
+            "groq": [],
+        }
+        self.api_key_state = {
+            "openai_idx": 0,
+            "gemini_idx": 0,
+            "anthropic_idx": 0,
+            "llama_idx": 0,
+            "deepseek_idx": 0,
+            "groq_idx": 0,
+        }
+        self.rotate_on_error = {
+            "openai": True,
+            "gemini": True,
+            "anthropic": True,
+            "llama": True,
+            "deepseek": True,
+            "groq": True,
+        }
+
+        # Back-compat fields used by older modules
         self.user_gemini_keys = []
         self.current_gemini_idx = 0
         self.rotate_gemini = MockVar(True)
@@ -110,7 +136,30 @@ class WebAppContext:
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
                     cfg = __import__("json").load(f)
-                self.user_gemini_keys = cfg.get("user_gemini_keys", [])
+                # API keys (new format)
+                api = cfg.get("api_keys") or {}
+                for k in ["openai", "gemini", "anthropic", "llama", "deepseek", "groq"]:
+                    v = api.get(k) or []
+                    if isinstance(v, list):
+                        self.api_keys[k] = [str(x).strip() for x in v if str(x).strip()]
+
+                st = cfg.get("api_key_state") or {}
+                for k in list(self.api_key_state.keys()):
+                    if k in st:
+                        try:
+                            self.api_key_state[k] = int(st.get(k) or 0)
+                        except Exception:
+                            pass
+
+                rot = cfg.get("rotate_on_error") or {}
+                for k in list(self.rotate_on_error.keys()):
+                    if k in rot:
+                        self.rotate_on_error[k] = bool(rot.get(k))
+
+                # Back-compat: keep older fields populated
+                self.user_gemini_keys = cfg.get("user_gemini_keys", []) or self.api_keys.get("gemini", [])
+                self.current_gemini_idx = int(cfg.get("current_gemini_idx", self.api_key_state.get("gemini_idx", 0)) or 0)
+                self.rotate_gemini.set(bool(cfg.get("rotate_gemini", self.rotate_on_error.get("gemini", True))))
                 cfg_path = cfg.get("last_full_path")
                 if cfg_path and os.path.exists(cfg_path):
                     self.last_full_path = cfg_path
@@ -124,13 +173,19 @@ class WebAppContext:
                 if self.user_gemini_keys:
                     try:
                         from google import genai
-                        self.gemini_client = genai.Client(api_key=self.user_gemini_keys[0])
+                        # Do not always start from index 0; resume from last known idx
+                        if self.current_gemini_idx >= len(self.user_gemini_keys):
+                            self.current_gemini_idx = 0
+                        self.gemini_client = genai.Client(api_key=self.user_gemini_keys[self.current_gemini_idx])
                         self.gemini_available = True
                     except Exception:
                         pass
             except Exception as e:
                 print(f"[WEB] Config load: {e}")
-        # OpenAI from openai.txt
+        # OpenAI from config.json (preferred) or openai.txt (fallback)
+        if self.api_keys.get("openai"):
+            self.openai_available = True
+        # Fallback to openai.txt for compatibility
         openai_path = PROJECT_ROOT / "openai.txt"
         if openai_path.exists():
             try:
@@ -139,6 +194,18 @@ class WebAppContext:
                     self.openai_available = True
             except Exception:
                 pass
+
+    def _save_config_partial(self, patch: dict):
+        """Merge patch into config.json. Best-effort, never crash export."""
+        try:
+            cfg_path = PROJECT_ROOT / "config.json"
+            cfg = {}
+            if cfg_path.exists():
+                cfg = __import__("json").loads(cfg_path.read_text(encoding="utf-8"))
+            cfg.update(patch)
+            cfg_path.write_text(__import__("json").dumps(cfg, indent=4, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
 
     def download_progress_hook(self, d):
         """Progress hook for yt-dlp - reports download % to on_progress"""
@@ -294,9 +361,33 @@ class WebAppContext:
             from google import genai
             self.gemini_client = genai.Client(api_key=self.user_gemini_keys[self.current_gemini_idx])
             self.gemini_available = True
+            # Persist idx so we don't always start from 0 next run
+            self.api_key_state["gemini_idx"] = self.current_gemini_idx
+            self._save_config_partial({"current_gemini_idx": self.current_gemini_idx, "api_key_state": self.api_key_state})
             return True
         except Exception:
             return False
+
+    def get_openai_key(self) -> str | None:
+        keys = self.api_keys.get("openai") or []
+        if not keys:
+            return None
+        idx = int(self.api_key_state.get("openai_idx", 0) or 0)
+        if idx >= len(keys):
+            idx = 0
+            self.api_key_state["openai_idx"] = 0
+        return keys[idx]
+
+    def rotate_openai_api_key(self) -> bool:
+        """Rotate OpenAI key only when called on error."""
+        keys = self.api_keys.get("openai") or []
+        if not keys:
+            return False
+        idx = int(self.api_key_state.get("openai_idx", 0) or 0)
+        idx = (idx + 1) % len(keys)
+        self.api_key_state["openai_idx"] = idx
+        self._save_config_partial({"api_key_state": self.api_key_state})
+        return True
 
     def detect_viral_segments_with_openai(self, transcript):
         return self.ai_engine.detect_viral_segments_with_openai(transcript)
