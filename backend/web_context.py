@@ -30,8 +30,9 @@ class WebAppContext:
     Headless context that provides the same interface as YouTubeHeatmapAnalyzer
     for the analysis_orchestrator, clip_exporter, and related modules.
     """
-    def __init__(self, project_dir: Path, on_progress=None):
+    def __init__(self, project_dir: Path, on_progress=None, preferred_ai_provider: str = None):
         self.project_dir = Path(project_dir)
+        self.preferred_ai_provider = (preferred_ai_provider or "").strip().lower() or None
         self.video_path = None
         self.current_video_path = None
         self.analysis_results = []
@@ -113,6 +114,13 @@ class WebAppContext:
             self._load_config()
         except Exception as e:
             print(f"[WebAppContext] _load_config failed: {e}")
+        # When user selected an API provider for this run, only that provider is "available"
+        if self.preferred_ai_provider:
+            if self.preferred_ai_provider != "openai":
+                self.openai_available = False
+            if self.preferred_ai_provider != "gemini":
+                self.gemini_available = False
+                self.gemini_client = None
         try:
             self._init_modules()
         except Exception as e:

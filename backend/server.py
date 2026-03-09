@@ -124,6 +124,7 @@ app.add_middleware(
 class AnalyzeRequest(BaseModel):
     youtube_url: str
     export_settings: Optional[dict[str, Any]] = None
+    api_provider: Optional[str] = None  # e.g. "openai", "gemini" — which API to use for this analysis
 
 
 class ExportClipRequest(BaseModel):
@@ -348,8 +349,10 @@ def analyze(req: AnalyzeRequest):
     project_id = meta["project_id"]
     if req.export_settings:
         update_project(project_id, export_settings=req.export_settings)
+    if req.api_provider:
+        update_project(project_id, preferred_ai_provider=req.api_provider)
     update_project(project_id, status="analyzing")
-    run_analysis(project_id, url)
+    run_analysis(project_id, url, preferred_ai_provider=req.api_provider)
     return {"project_id": project_id, "title": title}
 
 
@@ -447,7 +450,8 @@ def project_retry(project_id: str):
     if not url:
         raise HTTPException(status_code=400, detail="No YouTube URL for this project")
     update_project(project_id, status="analyzing", error=None)
-    run_analysis(project_id, url)
+    preferred = meta.get("preferred_ai_provider")
+    run_analysis(project_id, url, preferred_ai_provider=preferred)
     return {"ok": True}
 
 

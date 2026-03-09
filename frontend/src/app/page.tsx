@@ -5,7 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { Youtube, Plus, Film, Calendar, Loader2, Trash2, ShieldCheck, Upload } from "lucide-react";
 import AppSidebar from "@/components/AppSidebar";
-import { analyzeVideo, getProjects, getProjectStatus, deleteProject, retryProject, videoUrl, uploadCookies, getCookiesStatus, type Project } from "@/lib/api";
+import { analyzeVideo, getProjects, getProjectStatus, deleteProject, retryProject, videoUrl, uploadCookies, getCookiesStatus, getApiKeys, type Project } from "@/lib/api";
 import { useModal } from "@/components/ModalProvider";
 
 function getYoutubeThumbnail(url: string | null | undefined): string | null {
@@ -29,7 +29,20 @@ export default function HomePage() {
   const [cookiesStatus, setCookiesStatus] = useState<{ exists: boolean; size_kb: number } | null>(null);
   const [uploadingCookies, setUploadingCookies] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [apiKeys, setApiKeys] = useState<{ openai: string[]; gemini: string[]; anthropic: string[]; llama: string[]; deepseek: string[]; groq: string[] } | null>(null);
+  const [selectedApiProvider, setSelectedApiProvider] = useState<string>("");
   useEffect(() => setMounted(true), []);
+
+  const apiProviderOptions = (() => {
+    if (!apiKeys) return [];
+    const labels: Record<string, string> = { openai: "OpenAI (GPT)", gemini: "Gemini", anthropic: "Anthropic", llama: "Llama", deepseek: "DeepSeek", groq: "Groq" };
+    const out: { value: string; label: string }[] = [];
+    for (const key of ["openai", "gemini", "anthropic", "llama", "deepseek", "groq"]) {
+      const arr = (apiKeys as Record<string, string[]>)[key];
+      if (Array.isArray(arr) && arr.some((k) => k && String(k).trim())) out.push({ value: key, label: labels[key] || key });
+    }
+    return out;
+  })();
 
   const loadProjects = useCallback(async () => {
     setLoadError(null);
@@ -47,6 +60,17 @@ export default function HomePage() {
   useEffect(() => {
     loadProjects();
     getCookiesStatus().then(setCookiesStatus).catch(() => {});
+    getApiKeys().then((keys) => {
+      setApiKeys(keys);
+      setSelectedApiProvider((prev) => {
+        const opts = ["openai", "gemini", "anthropic", "llama", "deepseek", "groq"].filter(
+          (k) => Array.isArray((keys as Record<string, string[]>)[k]) && (keys as Record<string, string[]>)[k].some((x) => x && String(x).trim())
+        );
+        if (opts.length === 0) return prev;
+        if (prev && opts.includes(prev)) return prev;
+        return opts[0];
+      });
+    }).catch(() => setApiKeys(null));
   }, [loadProjects]);
 
   // Poll status for analyzing projects
@@ -78,7 +102,7 @@ export default function HomePage() {
     if (!url.trim()) return;
     setLoading(true);
     try {
-      const { project_id, title } = await analyzeVideo(url.trim(), exportSettings);
+      const { project_id, title } = await analyzeVideo(url.trim(), exportSettings, selectedApiProvider || undefined);
       // Add new project to list without redirect
       const newProj: Project = {
         project_id,
@@ -154,6 +178,23 @@ export default function HomePage() {
             Paste a YouTube link and our AI will detect the best moments to turn into short clips.
           </p>
           <div className="flex flex-col gap-4">
+            {apiProviderOptions.length > 0 && (
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-zinc-500 whitespace-nowrap">API untuk analisis:</label>
+                <select
+                  value={selectedApiProvider}
+                  onChange={(e) => setSelectedApiProvider(e.target.value)}
+                  className="bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-cyan-500/50 outline-none"
+                >
+                  <option value="">— Pilih API —</option>
+                  {apiProviderOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="flex gap-3">
             <div className="flex-1 flex items-center gap-2 bg-zinc-800/50 border border-zinc-600 rounded-xl px-4 py-3" suppressHydrationWarning>
               <Youtube className="w-5 h-5 text-red-500 flex-shrink-0" />

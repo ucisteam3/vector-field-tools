@@ -126,7 +126,7 @@ def get_analysis_status(project_id: str) -> dict:
         return s
 
 
-def run_analysis(project_id: str, youtube_url: str, on_progress=None):
+def run_analysis(project_id: str, youtube_url: str, on_progress=None, preferred_ai_provider: str = None):
     """Run full analysis in background. Updates project metadata on completion."""
     _set_status(project_id, "analyzing", "Starting...")
 
@@ -149,7 +149,7 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None):
 
         try:
             from backend.web_context import WebAppContext
-            ctx = WebAppContext(project_dir, on_progress=prog)
+            ctx = WebAppContext(project_dir, on_progress=prog, preferred_ai_provider=preferred_ai_provider)
             ctx.progress_var.set = lambda m: prog(m)
 
             # Check if video already exists in downloads folder (reanalyze without downloading again)
