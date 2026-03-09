@@ -280,6 +280,55 @@ class AIEngine:
         else:
             return 'informatif'  # default
     
+    def _use_gemini_for_ai(self):
+        """True when user selected Gemini (or non-OpenAI) and Gemini is available."""
+        return (
+            getattr(self.parent, "gemini_available", False)
+            and (not self._openai_client or not self.openai_available)
+        )
+
+    def _generate_title_gemini(self, segment_text, existing_titles=None, strict_content=False):
+        """Generate clickbait title using Gemini. Used when API selected is Gemini."""
+        if not segment_text or not getattr(self.parent, "gemini_client", None):
+            return _title_from_transcript(segment_text)
+        try:
+            prompt = """Kamu ahli YouTube Shorts untuk penonton Indonesia.
+Dari percakapan/transkrip berikut, buat SATU judul clickbait yang menarik (bukan generic).
+Aturan: BAHASA INDONESIA, maks 60 karakter, awali 1 emoji. Jangan pakai kata Gila/Parah.
+Judul harus mencerminkan isi klip. Jawab HANYA judul (tanpa tanda kutip).
+
+Percakapan:
+"""
+            prompt += (segment_text[:2000] if segment_text else "").strip()
+            response = self.parent.gemini_client.models.generate_content(
+                model="gemini-2.0-flash", contents=prompt
+            )
+            title = (response.text or "").strip().strip('"').strip("'")
+            title = self.clean_viral_title(title) if title else ""
+            if title and len(title) >= 8 and len(title) <= 80:
+                return title[:60]
+        except Exception as e:
+            print(f"[GEMINI] Title generation failed: {e}")
+        return _title_from_transcript(segment_text)
+
+    def _refine_hook_gemini(self, hook_text):
+        """Refine hook using Gemini. Returns (refined_hook, score)."""
+        if not (hook_text or "").strip() or not getattr(self.parent, "gemini_client", None):
+            return (hook_text or "").strip(), 50
+        try:
+            prompt = f"""Perbaiki kalimat hook berikut agar lebih menarik dan singkat (max 10 kata). Bahasa Indonesia. Jawab HANYA kalimat hook saja, tanpa penjelasan.
+
+Hook: {hook_text[:500]}"""
+            response = self.parent.gemini_client.models.generate_content(
+                model="gemini-2.0-flash", contents=prompt
+            )
+            refined = (response.text or "").strip().strip('"').strip("'")
+            if refined:
+                return refined[:120], 65
+        except Exception as e:
+            print(f"[GEMINI] Hook refine failed: {e}")
+        return (hook_text or "").strip(), 50
+
     def analyze_with_gemini(self, text, start_time, end_time, retry_count=0):
         """Use Gemini API with rotation support to analyze and summarize content"""
         if not self.parent.gemini_available or not text or text.startswith("["):
@@ -365,10 +414,13 @@ Output Format (JSON):
         strict_content: judul harus STRICT mencerminkan isi, 8–12 kata, tidak berlebihan.
         """
         existing_titles = existing_titles or []
+        if not segment_text:
+            return _title_from_transcript(segment_text)
+        if self._use_gemini_for_ai():
+            print("[GEMINI] Generating clickbait title")
+            return self._generate_title_gemini(segment_text, existing_titles, strict_content)
         if not self._openai_client or not self.openai_available:
             print("[OPENAI] API key not found, skipping clickbait title")
-            return _title_from_transcript(segment_text)
-        if not segment_text:
             return _title_from_transcript(segment_text)
         print("[OPENAI] Generating clickbait title")
 
@@ -491,16 +543,47 @@ Jawab HANYA judulnya.""".format(segment_text=(segment_text[:2000] if segment_tex
         except ValueError:
             return 0
 
+    def detect_viral_segments_with_gemini(self, transcript):
+        """
+        Use Gemini to detect viral moments from full transcript. Same output format as OpenAI.
+        """
+        if not (transcript or "").strip() or not getattr(self.parent, "gemini_client", None):
+            return []
+        print("[GEMINI] Detecting viral segments")
+        prompt = """You are an expert video highlight editor. Find GOLDEN MOMENTS—exciting moments, NOT setup/intro.
+
+PRIORITIZE: Conflict, controversy, debate, surprising events, strong emotions, key incidents, hot takes, dramatic reveals ("ternyata", "justru", "masalahnya").
+AVOID: Topic introductions, setup sentences, "Jadi seperti biasa", "Kita akan bahas", "Pertama kita bahas".
+
+OUTPUT: One line per clip:
+START_TIME - END_TIME | VIRAL_SCORE | HOOK
+Use transcript timestamps. VIRAL_SCORE 0-100. HOOK max 12 words. Min 10s, max 60s per clip. Up to 15 clips.
+
+Transcript:
+"""
+        prompt += (transcript[:80000] if transcript else "").strip()
+        try:
+            response = self.parent.gemini_client.models.generate_content(
+                model="gemini-2.0-flash", contents=prompt
+            )
+            result = (response.text or "").strip()
+            segments = self._parse_viral_segments_response(result)
+            return segments[:15]
+        except Exception as e:
+            print(f"[GEMINI] Detect viral segments failed: {e}")
+            return []
+
     def detect_viral_segments_with_openai(self, transcript, _retry=0):
         """
-        Use OpenAI GPT-4o to detect viral moments from full transcript (clip selection).
+        Use selected AI (OpenAI or Gemini) to detect viral moments from full transcript.
         Returns list of dicts: [{"start": sec, "end": sec, "viral_score": 0-100, "hook": str}, ...]
-        Format expected from model: START_TIME - END_TIME | VIRAL_SCORE | HOOK (one per line).
         """
+        if not (transcript or "").strip():
+            return []
+        if self._use_gemini_for_ai():
+            return self.detect_viral_segments_with_gemini(transcript)
         if not self._openai_client or not self.openai_available:
             print("[OPENAI] API key not found, skipping viral segment detection")
-            return []
-        if not (transcript or "").strip():
             return []
         print("[OPENAI] Detecting viral segments")
         prompt = """You are an expert video highlight editor. Your goal is to find GOLDEN MOMENTS—the actual exciting moments where something interesting happens, NOT the setup or introduction.
@@ -684,15 +767,52 @@ Transcript:
                 order.append(i)
         return [segments[i] for i in order] if order else segments
 
+    def rank_segments_with_gemini(self, segments):
+        """Use Gemini to rank segments by virality. Returns segments in ranked order."""
+        if not segments or not getattr(self.parent, "gemini_client", None):
+            return segments
+        print("[GEMINI] Ranking segments")
+        try:
+            prompt_body = self._build_segment_prompt(segments)
+            prompt = f"""Segments:
+
+{prompt_body}
+
+You are an expert short-form video editor. Select the most viral moments (shocking statements, emotional reactions, controversy, surprising stories). Return the top 10 clips ranked by virality. Reply with segment numbers only, one per line (e.g. 3, 1, 0, 5, 2, ...). Use the segment index (1-based) from the list above."""
+            response = self.parent.gemini_client.models.generate_content(
+                model="gemini-2.0-flash", contents=prompt
+            )
+            result = (response.text or "").strip()
+            order, seen = [], set()
+            for line in result.strip().split("\n"):
+                for part in line.replace(",", " ").split():
+                    try:
+                        num = int(part)
+                        idx = num - 1
+                        if 0 <= idx < len(segments) and idx not in seen:
+                            order.append(idx)
+                            seen.add(idx)
+                    except ValueError:
+                        continue
+            for i in range(len(segments)):
+                if i not in seen:
+                    order.append(i)
+            return [segments[i] for i in order] if order else segments
+        except Exception as e:
+            print(f"[GEMINI] Ranking failed: {e}, using original order")
+            return segments
+
     def rank_segments_with_openai(self, segments, _retry=0):
         """
-        Use OpenAI GPT-4o to select and rank the most viral segments (clip selection).
-        Returns segments in ranked order. Safe fallback: returns original list if API key missing or call fails.
+        Use selected AI (OpenAI or Gemini) to rank the most viral segments.
+        Returns segments in ranked order.
         """
+        if not segments:
+            return segments
+        if self._use_gemini_for_ai():
+            return self.rank_segments_with_gemini(segments)
         if not self._openai_client or not self.openai_available:
             print("[OPENAI] API key not found, skipping ranking")
-            return segments
-        if not segments:
             return segments
         print("[OPENAI] Ranking segments")
         try:
@@ -932,11 +1052,13 @@ Hook: """ + (hook_text or "").strip()[:300]
 
     def refine_and_score_hook_openai(self, hook_text, max_attempts=2, _retry=0):
         """
-        Refine hook with GPT-4o, then score it. If hook_score < 50, refine again (max_attempts).
+        Refine hook with selected AI (OpenAI or Gemini), then score it.
         Returns (refined_hook_text, hook_score).
         """
         if not (hook_text or "").strip():
             return "", 0
+        if self._use_gemini_for_ai():
+            return self._refine_hook_gemini(hook_text)
         best_hook = (hook_text or "").strip()
         best_score = 0
         for _ in range(max_attempts):
