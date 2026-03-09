@@ -943,11 +943,11 @@ class ClipExporter:
                 except Exception as e:
                     print(f"  [SOURCE CREDIT ERROR] {e}")
 
-            # Legacy: no FPS or timestamp manipulation — pipe ends at [v_out] for correct duration/sync
-            fc_str += f"{last_v_label}[v_out];"
+            # Legacy: no FPS or timestamp manipulation — pipe ends at [v_out] (no trailing semicolon)
+            fc_str += f"{last_v_label}[v_out]"
             # Full video chain (no audio) — for CPU fallback so we keep mode 9:16 + watermark, avoid anull/aresample
             fc_str_video_only = fc_str
-            
+
             # --- AUDIO PITCH (optional) ---
             # aresample=async=1:first_pts=0 keeps audio in sync with video
             pitch_enabled = self.parent.custom_settings.get("audio_pitch_enabled", False)
@@ -956,14 +956,15 @@ class ClipExporter:
             if pitch_enabled and pitch_semitones != 0:
                 rate_in = 48000 * (2 ** (pitch_semitones / 12.0))
                 print(f"  [AUDIO PITCH] {pitch_semitones:+.1f} semitones -> asetrate={rate_in:.0f},aresample=48000")
-                fc_str += f"{audio_filter}[a_pitch_in];[a_pitch_in]asetrate={rate_in:.0f},aresample=48000[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
+                fc_str += ";" + f"{audio_filter}[a_pitch_in];[a_pitch_in]asetrate={rate_in:.0f},aresample=48000[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
             else:
-                fc_str += f"{audio_filter}[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
-            
-            # Ultra-minimal: only scale (no pad/setsar/crop) — works on any FFmpeg build
-            ultra_minimal_fc = "[0:v]scale=1080:1920[v_out];"
-            minimal_fc_str_video_only = base_fc_str + base_last_v_label + "[v_out];"
-            minimal_fc_str = base_fc_str + base_last_v_label + "[v_out];" + audio_filter + "[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
+                fc_str += ";" + f"{audio_filter}[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
+
+            # Ultra-minimal: only scale — works on stripped FFmpeg builds (no trailing semicolon)
+            ultra_minimal_fc = "[0:v]scale=1080:1920[v_out]"
+            # Minimal: base mode chain + passthrough to [v_out] (valid chain; no trailing semicolon)
+            minimal_fc_str_video_only = base_fc_str + "[v_mixed]scale=iw:ih[v_out]"
+            minimal_fc_str = base_fc_str + "[v_mixed]scale=iw:ih[v_out];" + audio_filter + "[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
                 
             # GPU vs CPU pipeline
             use_pure_gpu = use_pure_gpu_possible and not has_heavy_filters and base_supports_gpu
@@ -979,7 +980,7 @@ class ClipExporter:
                 # GPU decode/encode with CPU filters (hwdownload -> filters -> hwupload)
                 filter_complex_cpu = fc_str  # save for fallback when NVENC fails
                 fc_str = "[0:v]hwdownload,format=nv12[v0];" + fc_str.replace("[0:v]", "[v0]")
-                fc_str = fc_str.replace(f"{last_v_label}[v_out];", f"{last_v_label}hwupload_cuda[v_out];")
+                fc_str = fc_str.replace(f"{last_v_label}[v_out]", f"{last_v_label}hwupload_cuda[v_out]")
                 filter_complex = fc_str
                 use_cpu = False  # Still using NVENC
                 print("  [GPU] Hybrid: NVDEC + CPU filters + NVENC")
@@ -1005,6 +1006,9 @@ class ClipExporter:
                 rest_inputs = input_args[2:] if len(input_args) > 2 else []
                 use_gpu_this = use_gpu_encode and not force_cpu
                 fc = (filter_complex_cpu if force_cpu and filter_complex_cpu else filter_complex)
+                fc = finalize_filter(fc)
+                print("[DEBUG] Filter graph:")
+                print(fc)
                 hwaccel = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] if use_gpu_this else []
                 if effective_video_path == str(self.parent.video_path):
                     print(f"  [CLIP-FIRST] Processing only {pad_duration:.1f}s segment (no full-video decode)")
