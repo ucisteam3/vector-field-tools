@@ -150,6 +150,58 @@ def find_nearest_cue(timestamp: float, cues: List[SubtitleCue], max_distance: fl
     return best_cue
 
 
+def find_sentence_start_before(timestamp: float, cues: List[SubtitleCue], max_lookback: float = 10.0) -> float:
+    """
+    Find the start of the sentence that contains or precedes the given timestamp.
+    Never start mid-sentence: return the cue start of the sentence that contains this time.
+    """
+    if not cues:
+        return timestamp
+    min_start = max(0.0, timestamp - max_lookback)
+    # Find cue that contains timestamp or is the last one ending before timestamp
+    best_cue = None
+    for cue in cues:
+        if cue.end < min_start:
+            continue
+        if cue.start > timestamp + 1.0:
+            break
+        if cue.start <= timestamp <= cue.end:
+            best_cue = cue
+            break
+        if cue.end >= timestamp and (best_cue is None or cue.start < best_cue.start):
+            best_cue = cue
+        if cue.start <= timestamp and cue.end >= timestamp - 0.5:
+            best_cue = cue
+    if best_cue is None:
+        for cue in reversed(cues):
+            if cue.end <= timestamp:
+                best_cue = cue
+                break
+    if best_cue is None:
+        return timestamp
+    # Return start of this sentence (beginning of cue)
+    return best_cue.start
+
+
+def refine_segment_start_hook_first(hook_timestamp: float, segment_end: float, cues: List[SubtitleCue],
+                                    pre_roll_sec: float = 2.0, max_shift: float = REFINE_START_MAX_SHIFT_SEC) -> float:
+    """
+    Hook-first clip start: start slightly before the hook (e.g. hook - 2s).
+    If that falls mid-sentence, shift start to the beginning of that sentence.
+    Then skip any leading filler sentences.
+    """
+    if not cues:
+        return max(0.0, hook_timestamp - pre_roll_sec)
+    candidate_start = max(0.0, hook_timestamp - pre_roll_sec)
+    # Snap to sentence boundary (never start mid-sentence)
+    sentence_start = find_sentence_start_before(candidate_start, cues, max_lookback=8.0)
+    new_start = min(sentence_start, candidate_start + max_shift)
+    new_start = max(0.0, new_start)
+    # Skip filler at the beginning
+    new_start = refine_segment_start(new_start, segment_end, cues, max_shift=max_shift)
+    return new_start
+
+
 def score_boundary_quality(timestamp: float, cues: List[SubtitleCue], is_start: bool = False) -> float:
     """
     Score how good a timestamp is as a clip boundary
@@ -208,6 +260,11 @@ MAX_BOUNDARY_EXTENSION_SEC = 8.0
 SUBTITLE_CONTINUITY_SEC = 0.6
 # Pause threshold: gap between subtitles > this = natural pause (good cut point)
 PAUSE_THRESHOLD_SEC = 0.4
+# Natural clip end: extend until end of sentence OR pause >= this (600ms)
+PAUSE_NATURAL_END_SEC = 0.6
+# Stop context continuation when pause > 1s or duration > 60s
+PAUSE_TOPIC_CHANGE_SEC = 1.0
+MAX_CLIP_DURATION_SEC = 60.0
 # Max shift for start refinement: skip intro/filler, shift to first meaningful moment
 REFINE_START_MAX_SHIFT_SEC = 6.0
 REFINE_END_MAX_EXTENSION_SEC = 6.0
@@ -231,8 +288,10 @@ FILLER_PHRASES = [
     "topik kita hari ini",
     "kita akan bahas",
     "kita akan membahas",
-    "seperti biasa",
+    "jadi sebenarnya",
     "kalau kita lihat",
+    "menurut saya",
+    "seperti biasa",
     "yang menarik adalah",
     "nah",
     "jadi",
@@ -360,19 +419,22 @@ def refine_segment_end(segment_end: float, cues: List[SubtitleCue],
         
         # Sentence complete?
         if is_sentence_ending(c.text):
-            # Prefer extending to natural pause if next cue has gap > 0.4s
+            # Natural clip end: prefer end of sentence when pause >= 600ms
             pause = get_pause_after(c, cues)
-            if pause >= PAUSE_THRESHOLD_SEC:
+            if pause >= PAUSE_NATURAL_END_SEC:
                 return min(best_end, cap)
             # Sentence ended, no strong pause - still a valid end
             return min(best_end, cap)
         
-        # No sentence end - check if next cue has pause (could end before incomplete sentence)
+        # No sentence end - check if next cue has pause (acceptable cut point at 600ms+)
         if j + 1 < len(cues):
             next_c = cues[j + 1]
             gap = next_c.start - c.end
-            if gap > PAUSE_THRESHOLD_SEC:
+            if gap > PAUSE_NATURAL_END_SEC:
                 # Natural pause before next cue - acceptable cut point
+                return min(best_end, cap)
+            # Stop context continuation when pause > 1s (topic change)
+            if gap > PAUSE_TOPIC_CHANGE_SEC:
                 return min(best_end, cap)
         else:
             break
