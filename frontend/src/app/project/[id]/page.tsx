@@ -11,7 +11,8 @@ import {
   playClipUrl,
   thumbnailClipUrl,
   fetchPreviewAsBlobUrl,
-  exportClipWithSettings,
+  exportClipAsync,
+  getExportStatus,
   type Project,
 } from "@/lib/api";
 import { useAppSettings } from "@/lib/settings-store";
@@ -28,6 +29,7 @@ export default function ProjectPage() {
   const [playingClip, setPlayingClip] = useState<number | null>(null);
   const [blobCache, setBlobCache] = useState<Record<number, string>>({});
   const [downloading, setDownloading] = useState<Set<number>>(new Set());
+  const [exportProgress, setExportProgress] = useState<{ progress: number; message: string } | null>(null);
   const blobCacheRef = useRef<Record<number, string>>({});
   blobCacheRef.current = blobCache;
 
@@ -82,21 +84,36 @@ export default function ProjectPage() {
     const clip = project?.clips?.[index];
     if (!clip) return;
     setDownloading((s) => new Set(s).add(index));
+    setExportProgress({ progress: 0, message: "Memulai..." });
     try {
-      const { clip_path } = await exportClipWithSettings(id, index, exportSettings);
-      const filename = (clip_path || "").replace("clips/", "");
-      if (!filename) throw new Error("Export gagal");
-      const downloadName = (clip.title || `clip_${index + 1}`).replace(/[^a-zA-Z0-9 _-]/g, "").trim().slice(0, 50) + ".mp4";
-      const url = playClipUrl(id, filename, true);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = downloadName;
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => document.body.removeChild(a), 100);
-      loadProject();
+      const { job_id } = await exportClipAsync(id, index, exportSettings);
+      const poll = async () => {
+        const status = await getExportStatus(job_id);
+        setExportProgress({ progress: status.progress, message: status.message });
+        if (status.status === "done" && status.clip_path) {
+          const filename = status.clip_path.replace("clips/", "");
+          const downloadName = (clip.title || `clip_${index + 1}`).replace(/[^a-zA-Z0-9 _-]/g, "").trim().slice(0, 50) + ".mp4";
+          const url = playClipUrl(id, filename, true);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = downloadName;
+          a.style.display = "none";
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => document.body.removeChild(a), 100);
+          setExportProgress(null);
+          loadProject();
+          return;
+        }
+        if (status.status === "error") {
+          setExportProgress(null);
+          throw new Error(status.error || "Export gagal");
+        }
+        setTimeout(poll, 400);
+      };
+      await poll();
     } catch (err) {
+      setExportProgress(null);
       alert(err instanceof Error ? err.message : "Export gagal. Cek konsol untuk detail.");
     } finally {
       setDownloading((s) => {

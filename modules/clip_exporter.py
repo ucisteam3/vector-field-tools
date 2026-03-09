@@ -518,6 +518,7 @@ class ClipExporter:
                         f"[0:v]setsar=1,crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920[v_mixed];"
                     )
             else:
+                self._progress(25, "Mempersiapkan efek...")
                 # Landscape Fit (blur) OR podcast_smart fallback (center crop)
                 if export_mode == "face_tracking" and not MEDIAPIPE_AVAILABLE:
                     print("  [WARNING] Face tracking requires MediaPipe - using landscape fit mode")
@@ -960,6 +961,14 @@ class ClipExporter:
                     for line in process.stdout:
                         line = line.strip()
                         if line:
+                            # Parse time= for progress (50-98%)
+                            if encode_duration and encode_duration > 0 and "time=" in line:
+                                m = time_pat.search(line)
+                                if m:
+                                    h, mn, s, ms = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+                                    elapsed = h * 3600 + mn * 60 + s + ms / 1000.0
+                                    pct = 50 + int(48 * min(1.0, elapsed / encode_duration))
+                                    self._progress(pct, f"Mengode video... {int(elapsed)}s")
                             # Filter interesting lines to avoid spam
                             if any(k in line for k in ["frame=", "time=", "size=", "speed="]):
                                 print(f"    [FFMPEG] {line}", end='\r')
@@ -974,12 +983,16 @@ class ClipExporter:
                     print(f"  [EXEC ERROR] Failed to run ffmpeg: {e}")
                     return -1
 
+            # Compute encode duration for progress (used in run_ffmpeg_realtime)
+            encode_dur = effective_duration if effective_video_path != str(self.parent.video_path) else duration + 0.4
+
             if use_gpu:
                 print(f"  [GPU] Mencoba ekspor dengan NVENC...")
                 cmd = get_ffmpeg_cmd("gpu")
-                ret_code = run_ffmpeg_realtime(cmd, "GPU-NVENC")
+                ret_code = run_ffmpeg_realtime(cmd, "GPU-NVENC", encode_dur)
                 
                 if ret_code == 0:
+                    self._progress(100, "Selesai")
                     print(f"  [SUCCESS] Klip {clip_num or ''} berhasil diekspor (GPU)")
                     if clip_num is None:
                         messagebox.showinfo("Berhasil", f"Klip berhasil diekspor (GPU):\n{output_filename}")
@@ -990,9 +1003,10 @@ class ClipExporter:
             # CPU Fallback or Default
             print(f"  [CPU] Mengekspor dengan libx264...")
             cmd = get_ffmpeg_cmd("cpu")
-            ret_code = run_ffmpeg_realtime(cmd, "CPU-x264")
+            ret_code = run_ffmpeg_realtime(cmd, "CPU-x264", encode_dur)
             
             if ret_code == 0:
+                self._progress(100, "Selesai")
                 print(f"  [SUCCESS] Klip {clip_num or ''} berhasil diekspor (CPU)")
                 if clip_num is None:
                     messagebox.showinfo("Berhasil", f"Klip berhasil diekspor (CPU):\n{output_filename}")

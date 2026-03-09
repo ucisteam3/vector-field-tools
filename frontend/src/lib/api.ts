@@ -69,6 +69,49 @@ export async function exportClip(projectId: string, clipIndex: number): Promise<
 
 export type ExportSettingsInput = Record<string, unknown>;
 
+/** Start async export, returns job_id. Poll getExportStatus for progress. */
+export async function exportClipAsync(
+  projectId: string,
+  clipId: number,
+  settings: ExportSettingsInput | null
+): Promise<{ job_id: string }> {
+  const res = await fetch(`${API}/export_clip_async`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      project_id: projectId,
+      clip_id: clipId,
+      settings: settings ?? undefined,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    try {
+      const j = JSON.parse(text);
+      throw new Error(typeof j?.detail === "string" ? j.detail : text);
+    } catch (e) {
+      if (e instanceof Error && e.message.length > 0 && !/not valid JSON|Unexpected token/i.test(e.message))
+        throw e;
+      throw new Error(text || `Export gagal (${res.status})`);
+    }
+  }
+  return res.json();
+}
+
+export type ExportStatus = {
+  progress: number;
+  message: string;
+  status: "running" | "done" | "error";
+  clip_path?: string;
+  error?: string;
+};
+
+export async function getExportStatus(jobId: string): Promise<ExportStatus> {
+  const res = await fetch(`${API}/export_clip_status?job_id=${encodeURIComponent(jobId)}`);
+  if (!res.ok) throw new Error("Status tidak ditemukan");
+  return res.json();
+}
+
 export async function exportClipWithSettings(
   projectId: string,
   clipId: number,
