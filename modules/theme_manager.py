@@ -1,29 +1,30 @@
 """
 Theme Manager Module
-Handles dark theme configuration for the application
+Handles dark theme configuration for the application.
+Web/headless: no tkinter; setup_dark_theme is no-op.
 """
 
-import tkinter as tk
-from tkinter import ttk
+try:
+    import tkinter as tk
+    from tkinter import ttk
+    _tk_available = True
+except ImportError:
+    tk = None
+    ttk = None
+    _tk_available = False
 
 
 class ThemeManager:
-    """Manages application theme and styling"""
-    
+    """Manages application theme and styling (desktop only; no-op when headless)."""
+
     def __init__(self, parent):
-        """
-        Initialize Theme Manager
-        
-        Args:
-            parent: Reference to YouTubeHeatmapAnalyzer instance
-        """
         self.parent = parent
-    
+
     def setup_dark_theme(self):
-        """Configure modern dark theme"""
+        """Configure modern dark theme. No-op when headless or tk not available."""
+        if not _tk_available or getattr(self.parent, "root", None) is None:
+            return
         style = ttk.Style()
-        
-        # Configure main window
         self.parent.root.configure(bg=self.parent.bg_dark)
         
         # Configure ttk styles

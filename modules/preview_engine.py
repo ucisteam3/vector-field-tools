@@ -1,6 +1,13 @@
-import tkinter as tk
-from PIL import Image, ImageDraw, ImageFont, ImageTk, ImageEnhance, ImageColor
 import os
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageColor
+try:
+    from PIL import ImageTk
+    import tkinter as tk
+    _tk_pil_available = True
+except ImportError:
+    ImageTk = None
+    tk = None
+    _tk_pil_available = False
 
 def draw_mobile_ui(draw, w, h, scale):
     """Draw procedural Mobile App UI Overlay (Shorts styling)"""
@@ -606,8 +613,12 @@ def render_subtitle_preview(canvas, settings, font_dir=None):
         except Exception as e:
             print(f"[PREVIEW ERROR] Source credit render failed: {e}")
 
-    # Convert PhotoImage and display on canvas
-    photo = ImageTk.PhotoImage(image)
-    canvas.delete("all")
-    canvas.create_image(0, 0, anchor=tk.NW, image=photo)
-    canvas.image = photo  # Keep reference to prevent garbage collection
+    # Convert PhotoImage and display on canvas (skip when headless or no tk)
+    if canvas is not None and _tk_pil_available and ImageTk is not None and tk is not None:
+        try:
+            photo = ImageTk.PhotoImage(image)
+            canvas.delete("all")
+            canvas.create_image(0, 0, anchor=tk.NW, image=photo)
+            canvas.image = photo
+        except Exception:
+            pass
