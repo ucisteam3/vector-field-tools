@@ -3,11 +3,18 @@ Results Manager Module
 Handles results UI updates, export, and clip download management
 """
 
-import tkinter as tk
-from tkinter import messagebox, filedialog
 import json
 import os
 import threading
+
+# Headless: no GUI. Stubs for any dialog use.
+def _noop_messagebox(*a, **k):
+    pass
+def _noop_filedialog(*a, **k):
+    return None
+messagebox = type("Messagebox", (), {"showwarning": _noop_messagebox, "showinfo": _noop_messagebox, "showerror": _noop_messagebox, "askyesno": lambda *a, **k: False})()
+filedialog = type("Filedialog", (), {"asksaveasfilename": lambda *a, **k: None, "askdirectory": lambda *a, **k: None})()
+END = "end"
 
 
 class ResultsManager:
