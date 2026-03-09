@@ -301,6 +301,63 @@ FILLER_PHRASES = [
 MIN_MEANINGFUL_LEN = 15
 
 
+def _tokenize_for_similarity(text: str) -> List[str]:
+    """
+    Lightweight tokenizer for topic/duplicate detection.
+    Keeps only alnum words, lowercased, removes very short tokens.
+    """
+    if not text:
+        return []
+    toks = re.findall(r"[a-zA-Z0-9]+", text.lower())
+    return [t for t in toks if len(t) >= 3]
+
+
+def sentence_similarity(a: str, b: str) -> float:
+    """
+    Similarity 0..1 using a hybrid:
+    - Jaccard overlap on token sets
+    - Cosine on term-frequency counters (no external deps)
+    """
+    ta = _tokenize_for_similarity(a)
+    tb = _tokenize_for_similarity(b)
+    if not ta or not tb:
+        return 0.0
+    sa = set(ta)
+    sb = set(tb)
+    inter = len(sa & sb)
+    union = len(sa | sb) or 1
+    jacc = inter / union
+    # TF-cosine
+    ca = {}
+    cb = {}
+    for t in ta:
+        ca[t] = ca.get(t, 0) + 1
+    for t in tb:
+        cb[t] = cb.get(t, 0) + 1
+    dot = 0.0
+    na = 0.0
+    nb = 0.0
+    for k, va in ca.items():
+        na += va * va
+        vb = cb.get(k)
+        if vb:
+            dot += va * vb
+    for vb in cb.values():
+        nb += vb * vb
+    denom = (na ** 0.5) * (nb ** 0.5)
+    cos = (dot / denom) if denom else 0.0
+    # Blend: favor jaccard (robust for short sentences)
+    return float(0.65 * jacc + 0.35 * cos)
+
+
+def is_topic_shift(prev_text: str, next_text: str, *, threshold: float = 0.38) -> bool:
+    """
+    Simple semantic topic shift heuristic:
+    if similarity between consecutive sentences drops below threshold, treat as boundary.
+    """
+    return sentence_similarity(prev_text, next_text) < threshold
+
+
 def _is_filler_sentence(text: str) -> bool:
     """
     Check if text is predominantly a filler sentence.
@@ -436,6 +493,12 @@ def refine_segment_end(segment_end: float, cues: List[SubtitleCue],
             # Stop context continuation when pause > 1s (topic change)
             if gap > PAUSE_TOPIC_CHANGE_SEC:
                 return min(best_end, cap)
+            # Topic shift by content similarity (semantic boundary)
+            try:
+                if is_topic_shift(c.text, next_c.text):
+                    return min(best_end, cap)
+            except Exception:
+                pass
         else:
             break
     
