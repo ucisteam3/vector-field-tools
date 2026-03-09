@@ -142,6 +142,11 @@ class ApiKeysPayload(BaseModel):
     rotate_on_error: dict[str, bool] = {}
 
 
+class ApiKeyTestRequest(BaseModel):
+    provider: str
+    mode: str = "all"  # all | current
+
+
 # Export job progress store (job_id -> status)
 _export_jobs: dict[str, dict] = {}
 import threading
@@ -238,6 +243,87 @@ def save_api_keys(payload: ApiKeysPayload):
     cfg["rotate_on_error"] = rot
     _save_root_config(cfg)
     return {"ok": True}
+
+
+def _mask_key(k: str) -> str:
+    s = (k or "").strip()
+    if len(s) <= 8:
+        return "****"
+    return s[:4] + ("*" * (len(s) - 8)) + s[-4:]
+
+
+@app.post("/settings/api_keys/test")
+def test_api_keys(req: ApiKeyTestRequest):
+    """
+    Test stored keys for a provider.
+    - OpenAI: tries OpenAI client init + models.list
+    - Gemini: tries genai.Client + generate_content('hi')
+    Others: saved only (not tested).
+    """
+    provider = (req.provider or "").strip().lower()
+    mode = (req.mode or "all").strip().lower()
+    if provider not in ("openai", "gemini", "anthropic", "llama", "deepseek", "groq"):
+        raise HTTPException(status_code=400, detail="Unknown provider")
+
+    cfg = _load_root_config()
+    api = cfg.get("api_keys") or {}
+    keys = api.get(provider) or []
+    if provider == "gemini" and not keys and cfg.get("user_gemini_keys"):
+        keys = cfg.get("user_gemini_keys") or []
+    if provider == "groq" and not keys and cfg.get("user_groq_keys"):
+        keys = cfg.get("user_groq_keys") or []
+
+    if not isinstance(keys, list):
+        keys = []
+    keys = [str(k).strip() for k in keys if str(k).strip()]
+
+    if not keys:
+        return {"provider": provider, "results": [], "note": "no keys"}
+
+    # pick current only
+    if mode == "current":
+        st = cfg.get("api_key_state") or {}
+        idx_key = f"{provider}_idx" if provider != "openai" else "openai_idx"
+        idx = int(st.get(idx_key) or 0)
+        if idx >= len(keys):
+            idx = 0
+        keys = [keys[idx]]
+
+    results = []
+
+    if provider == "openai":
+        try:
+            from openai import OpenAI
+        except Exception:
+            return {"provider": provider, "results": [{"key": _mask_key(k), "status": "error", "detail": "openai package not installed"} for k in keys]}
+        for k in keys:
+            try:
+                client = OpenAI(api_key=k)
+                # lightweight call
+                _ = client.models.list()
+                results.append({"key": _mask_key(k), "status": "ok"})
+            except Exception as e:
+                results.append({"key": _mask_key(k), "status": "error", "detail": str(e)[:160]})
+        return {"provider": provider, "results": results}
+
+    if provider == "gemini":
+        try:
+            from google import genai
+        except Exception:
+            return {"provider": provider, "results": [{"key": _mask_key(k), "status": "error", "detail": "google-genai not installed"} for k in keys]}
+        for k in keys:
+            try:
+                client = genai.Client(api_key=k)
+                client.models.generate_content(model="gemini-2.0-flash", contents="hi")
+                results.append({"key": _mask_key(k), "status": "ok"})
+            except Exception as e:
+                results.append({"key": _mask_key(k), "status": "error", "detail": str(e)[:160]})
+        return {"provider": provider, "results": results}
+
+    # Not wired yet (saved for future use)
+    for k in keys:
+        results.append({"key": _mask_key(k), "status": "saved", "detail": "not tested"})
+    return {"provider": provider, "results": results}
 
 @app.post("/analyze")
 def analyze(req: AnalyzeRequest):

@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Save } from "lucide-react";
-import { getApiKeys, saveApiKeys, type ApiKeysPayload } from "@/lib/api";
+import { Loader2, Save, RefreshCw } from "lucide-react";
+import { getApiKeys, saveApiKeys, testApiKeys, type ApiKeysPayload, type ApiKeyTestResult } from "@/lib/api";
 
 function normalizeLines(text: string): string[] {
   return text
@@ -54,6 +54,9 @@ export default function ApiKeysPanel() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [testing, setTesting] = useState<Record<string, boolean>>({});
+  const [testResults, setTestResults] = useState<Record<string, ApiKeyTestResult[]>>({});
+  const [testNote, setTestNote] = useState<Record<string, string | undefined>>({});
 
   const [form, setForm] = useState<Record<ProviderKey, string>>({
     openai: "",
@@ -121,6 +124,20 @@ export default function ApiKeysPanel() {
     }
   }
 
+  async function onTest(provider: ProviderKey) {
+    try {
+      setTesting((t) => ({ ...t, [provider]: true }));
+      setError(null);
+      const r = await testApiKeys(provider, "all");
+      setTestResults((s) => ({ ...s, [provider]: r.results || [] }));
+      setTestNote((n) => ({ ...n, [provider]: r.note }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTesting((t) => ({ ...t, [provider]: false }));
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-8 flex items-center justify-center min-h-[200px]">
@@ -151,15 +168,25 @@ export default function ApiKeysPanel() {
                 <div className="text-sm font-medium text-zinc-200">{p.label}</div>
                 <div className="text-xs text-zinc-500 mt-0.5">{p.hint}</div>
               </div>
-              <label className="text-xs text-zinc-400 flex items-center gap-2 select-none">
-                <input
-                  type="checkbox"
-                  checked={!!rotate[p.key]}
-                  onChange={(e) => setRotate((r) => ({ ...r, [p.key]: e.target.checked }))}
-                  className="rounded border-zinc-600 bg-zinc-800 text-cyan-500 focus:ring-cyan-500"
-                />
-                Rotate on error
-              </label>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => onTest(p.key)}
+                  disabled={!!testing[p.key]}
+                  className="text-xs px-3 py-1.5 rounded-md border border-zinc-600 bg-zinc-800/60 hover:bg-zinc-800 text-zinc-200 disabled:opacity-60 inline-flex items-center gap-2"
+                >
+                  {testing[p.key] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  Test
+                </button>
+                <label className="text-xs text-zinc-400 flex items-center gap-2 select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!rotate[p.key]}
+                    onChange={(e) => setRotate((r) => ({ ...r, [p.key]: e.target.checked }))}
+                    className="rounded border-zinc-600 bg-zinc-800 text-cyan-500 focus:ring-cyan-500"
+                  />
+                  Rotate on error
+                </label>
+              </div>
             </div>
 
             <textarea
@@ -168,6 +195,41 @@ export default function ApiKeysPanel() {
               placeholder="tempel key di sini...\n1 key per baris"
               className="mt-3 w-full min-h-[110px] rounded-lg bg-zinc-950/40 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
+
+            {(testNote[p.key] || testResults[p.key]) && (
+              <div className="mt-3 text-xs">
+                {testNote[p.key] && <div className="text-zinc-500">{testNote[p.key]}</div>}
+                {!!(testResults[p.key] || []).length && (
+                  <div className="mt-2 space-y-1">
+                    {(testResults[p.key] || []).map((r, idx) => (
+                      <div
+                        key={`${r.key}-${idx}`}
+                        className="flex items-center justify-between gap-2 rounded-md border border-zinc-700 bg-zinc-950/30 px-2 py-1"
+                      >
+                        <span className="font-mono text-zinc-300">{r.key}</span>
+                        <span
+                          className={
+                            r.status === "ok"
+                              ? "text-emerald-300"
+                              : r.status === "saved"
+                              ? "text-zinc-400"
+                              : "text-red-300"
+                          }
+                          title={r.detail || ""}
+                        >
+                          {r.status === "ok" ? "OK" : r.status === "saved" ? "SAVED" : "ERROR"}
+                        </span>
+                      </div>
+                    ))}
+                    {(testResults[p.key] || []).some((r) => r.status === "error" && r.detail) && (
+                      <div className="text-zinc-500 mt-1">
+                        Hover status “ERROR” untuk melihat ringkasan error.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>

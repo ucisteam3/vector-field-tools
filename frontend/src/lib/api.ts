@@ -212,6 +212,26 @@ export async function saveApiKeys(payload: ApiKeysPayload): Promise<{ ok: boolea
   return res.json();
 }
 
+export type ApiKeyTestResult = {
+  key: string;
+  status: "ok" | "error" | "saved";
+  detail?: string;
+};
+
+export async function testApiKeys(provider: string, mode: "all" | "current" = "all"): Promise<{
+  provider: string;
+  results: ApiKeyTestResult[];
+  note?: string;
+}> {
+  const res = await fetch(`${API}/settings/api_keys/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider, mode }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export type Clip = {
   id?: number;
   start: number;
