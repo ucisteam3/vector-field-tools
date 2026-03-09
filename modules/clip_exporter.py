@@ -289,16 +289,19 @@ class ClipExporter:
             
             # Voice Over Hook Logic
             voiceover_path = None
-            if EDGE_TTS_AVAILABLE and self.parent.use_voiceover_var.get() and result.get('hook_script'):
-                print(f"  [AI VOX] Generating hook: {result['hook_script']}")
-                temp_vox = Path(LOCAL_TEMP_DIR) / f"vox_{int(time.time())}.mp3"
-                if self.parent.generate_voiceover(result['hook_script'], str(temp_vox)):
-                    voiceover_path = temp_vox
+            if EDGE_TTS_AVAILABLE and getattr(self.parent, "use_voiceover_var", None) and self.parent.use_voiceover_var.get() and result.get("hook_script"):
+                gen_vox = getattr(self.parent, "generate_voiceover", None)
+                if callable(gen_vox):
+                    print(f"  [AI VOX] Generating hook: {result['hook_script']}")
+                    temp_vox = Path(LOCAL_TEMP_DIR) / f"vox_{int(time.time())}.mp3"
+                    if gen_vox(result["hook_script"], str(temp_vox)):
+                        voiceover_path = temp_vox
 
             # --- SUBTITLE GENERATION (Word-Level Karaoke) ---
             ass_path = None
-            print(f"  [DEBUG] Subtitle Enabled Checkbox: {self.parent.subtitle_enabled_var.get()}")
-            if self.parent.subtitle_enabled_var.get():
+            _sv = getattr(self.parent, "subtitle_enabled_var", None)
+            subtitle_enabled = bool(_sv and getattr(_sv, "get", None) and _sv.get()) if _sv else False
+            if subtitle_enabled:
                 try:
                     # 1. Prepare Settings for this Clip (Copy global)
                     clip_settings = self.parent.custom_settings.copy()
