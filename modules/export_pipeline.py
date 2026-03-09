@@ -49,12 +49,11 @@ def build_video_filter(
     has_overlay: bool = False,
     has_source_credit: bool = False,
     parent: Optional[Any] = None,
-    num_inputs_before_watermark: int = 1,
-    num_inputs_before_overlay: int = 1,
+    num_inputs: int = 1,
 ) -> Tuple[str, str, List[str]]:
     """
     Build video filter graph. Order: base -> zoom -> flip -> subtitles -> watermark -> overlay -> source_credit -> [v_out].
-    Returns (fc_video_only, last_v_label, extra_inputs).
+    Returns (fc_video_only, last_v_label, extra_inputs). num_inputs = number of -i before any watermark/overlay image.
     """
     _has = ffmpeg_has_filters("subtitles", "drawtext", "zoompan", "hflip")
     extra_inputs: List[str] = []
@@ -70,7 +69,6 @@ def build_video_filter(
         fc = landscape_fit()
         last = "[v_mixed]"
     else:
-        # fallback portrait
         fc = portrait_crop()
         last = "[v_mixed]"
 
@@ -92,18 +90,18 @@ def build_video_filter(
         fc = append_filter(fc, apply_subtitles(last, ass_path, fonts_dir))
         last = "[v_sub]"
 
-    # Watermark
+    # Watermark (image index = num_inputs)
     if has_watermark and _has.get("drawtext", True):
-        wm_idx = num_inputs_before_watermark
+        wm_idx = num_inputs
         seg, ext = apply_watermark(last, settings, wm_idx=wm_idx)
         if seg:
             fc = append_filter(fc, seg)
             extra_inputs.extend(ext)
             last = "[v_wm]"
 
-    # Overlay
+    # Overlay (image index = num_inputs + number of extra inputs so far)
     if has_overlay and _has.get("drawtext", True):
-        ov_idx = num_inputs_before_overlay
+        ov_idx = num_inputs + (len(extra_inputs) // 2)
         seg, ext = apply_overlay(last, settings, ov_idx=ov_idx)
         if seg:
             fc = append_filter(fc, seg)
@@ -214,8 +212,7 @@ def export_clip(
         has_overlay=settings.get("overlay_enabled", False),
         has_source_credit=settings.get("source_credit_enabled", False),
         parent=parent,
-        num_inputs_before_watermark=n_in,
-        num_inputs_before_overlay=n_in + (2 if extra else 0),
+        num_inputs=n_in,
     )
     input_args.extend(extra)
 
