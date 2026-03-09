@@ -927,6 +927,8 @@ class ClipExporter:
 
             # Legacy: no FPS or timestamp manipulation — pipe ends at [v_out] for correct duration/sync
             fc_str += f"{last_v_label}[v_out];"
+            # Full video chain (no audio) — for CPU fallback so we keep mode 9:16 + watermark, avoid anull/aresample
+            fc_str_video_only = fc_str
             
             # --- AUDIO PITCH (optional) ---
             # aresample=async=1:first_pts=0 keeps audio in sync with video
@@ -964,13 +966,13 @@ class ClipExporter:
                 use_cpu = False  # Still using NVENC
                 print("  [GPU] Hybrid: NVDEC + CPU filters + NVENC")
             else:
-                # CPU fallback: ultra-minimal (scale+pad only), audio via -map 0:a
+                # CPU fallback: full video chain (mode 9:16 + zoom/subtitle/watermark jika tersedia), audio via -map 0:a
                 use_video_only_minimal = True
-                filter_complex = ultra_minimal_fc
-                filter_complex_cpu = ultra_minimal_fc
+                filter_complex = fc_str_video_only
+                filter_complex_cpu = fc_str_video_only
                 use_cpu = True
                 if has_heavy_filters:
-                    print("  [CPU] Fallback: scale+pad + audio direct (tanpa zoom/subtitle/watermark).")
+                    print("  [CPU] Fallback: chain video penuh (mode 9:16 + watermark jika drawtext ada), audio direct.")
             use_gpu_encode = use_pure_gpu or (use_pure_gpu_possible and not use_cpu)
 
             def get_ffmpeg_cmd(force_cpu=False):
