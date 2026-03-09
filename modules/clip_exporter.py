@@ -440,14 +440,14 @@ class ClipExporter:
                         '-fflags', '+genpts', '-avoid_negative_ts', 'make_zero',
                         '-max_muxing_queue_size', '1024', str(temp_full)]
                     if use_gpu_mux:
-                        mux_cmd = mux_base[:4] + ['-c:v', 'h264_nvenc', '-preset', 'p1', '-cq', '23'] + mux_base[4:]
+                        mux_cmd = mux_base[:4] + ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] + mux_base[4:]
+                        mux_cmd = mux_cmd[:4] + ['-c:v', 'h264_nvenc', '-preset', 'p5'] + mux_cmd[6:]
                     else:
                         mux_cmd = mux_base[:4] + ['-c:v', 'libx264', '-preset', 'fast', '-crf', '23'] + mux_base[4:]
                     r = subprocess.run(mux_cmd, capture_output=True, text=True, creationflags=0x08000000 if os.name == "nt" else 0)
                     if r.returncode != 0 and use_gpu_mux:
-                        print(f"  [PODCAST] NVENC mux gagal, fallback CPU: {r.stderr[-200:] if r.stderr else ''}")
-                        mux_cmd_cpu = mux_base[:4] + ['-c:v', 'libx264', '-preset', 'fast', '-crf', '23'] + mux_base[4:]
-                        subprocess.run(mux_cmd_cpu, capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
+                        print(f"  [PODCAST] NVENC mux gagal: {r.stderr[-200:] if r.stderr else ''}")
+                        raise RuntimeError("NVENC gagal pada langkah podcast mux.")
                     effective_video_path = str(temp_full)
                     effective_start = 0
                     effective_duration = pad_end - pad_start
@@ -878,14 +878,14 @@ class ClipExporter:
             else:
                 fc_str += f"{audio_filter}[a_out]"
                 
-            filter_complex = fc_str
-            
-            # Encoder configuration based on GPU toggle
+            # GPU pipeline: hwaccel decode -> hwdownload -> CPU filters -> hwupload_cuda -> NVENC
             use_gpu = self.parent.gpu_var.get()
-            
-            def get_ffmpeg_cmd(encoder="cpu"):
-                # Apply Audio Padding (Competitor Rule: 0.2s buffer)
-                # For podcast_smart pre-cropped, effective_* already has full clip
+            if use_gpu:
+                fc_str = "[0:v]hwdownload,format=nv12[v0];" + fc_str.replace("[0:v]", "[v0]")
+                fc_str = fc_str.replace(f"{last_v_label}null[v_out];", f"{last_v_label}hwupload_cuda[v_out];")
+            filter_complex = fc_str
+
+            def get_ffmpeg_cmd():
                 if effective_video_path != str(self.parent.video_path):
                     pad_start = effective_start
                     pad_duration = effective_duration
@@ -893,45 +893,28 @@ class ClipExporter:
                     pad_start = max(0, result['start'] - 0.2)
                     pad_end = result['start'] + duration + 0.2
                     pad_duration = pad_end - pad_start
-
-                # [A/V SYNC FIX] -ss and -t MUST come AFTER -i for accurate sync.
-                first_input = input_args[:2]  # -i and path
+                first_input = input_args[:2]
                 rest_inputs = input_args[2:] if len(input_args) > 2 else []
-                # GPU: NVENC encode only (CPU decode+filter - hwaccel cuda can fail on some builds)
+                hwaccel = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] if use_gpu else []
                 base_cmd = [
-                    'ffmpeg', '-y',
-                    '-fflags', '+genpts', '-avoid_negative_ts', 'make_zero',
-                    *first_input,
+                    'ffmpeg', '-y', '-fflags', '+genpts', '-avoid_negative_ts', 'make_zero',
+                    *hwaccel, *first_input,
                     '-ss', str(pad_start), '-t', str(pad_duration),
                     *rest_inputs,
                     '-filter_complex', filter_complex,
                     '-map', '[v_out]', '-map', '[a_out]',
                     '-max_muxing_queue_size', '1024',
                 ]
-
-                if encoder == "gpu":
-                    # NVENC (NVIDIA CUDA) - p1 = fastest preset, ~5-10x faster than CPU
+                if use_gpu:
                     base_cmd.extend([
-                        '-c:v', 'h264_nvenc',
-                        '-preset', 'p1',           # p1=fastest .. p7=slowest
-                        '-cq', '23',               # Quality (18-28)
-                        '-b:v', '8M',
-                        '-maxrate', '10M',
-                        '-bufsize', '16M',
-                        '-c:a', 'aac',
-                        '-b:a', '192k',            # Audio bitrate
-                        '-ar', '48000',            # Audio sample rate
+                        '-c:v', 'h264_nvenc', '-preset', 'p5', '-b:v', '6M',
+                        '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
                         str(output_path)
                     ])
                 else:
-                    # CPU (libx264) settings with quality control
                     base_cmd.extend([
-                        '-c:v', 'libx264',
-                        '-preset', 'medium',       # Balanced preset
-                        '-crf', '23',              # Quality (18-28, lower=better)
-                        '-maxrate', '8M',          # Max bitrate 8 Mbps
-                        '-ar', '48000',            # Audio sample rate
-                        str(output_path)
+                        '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
+                        '-maxrate', '8M', '-ar', '48000', str(output_path)
                     ])
                 return base_cmd
 
@@ -1003,35 +986,33 @@ class ClipExporter:
             encode_dur = effective_duration if effective_video_path != str(self.parent.video_path) else duration + 0.4
 
             if use_gpu:
-                print(f"  [GPU] Mencoba ekspor dengan NVENC...")
-                cmd = get_ffmpeg_cmd("gpu")
+                print("  Using NVENC GPU encoder")
+                cmd = get_ffmpeg_cmd()
                 ret_code = run_ffmpeg_realtime(cmd, "GPU-NVENC", encode_dur, encoder_label="NVENC GPU")
-                
                 if ret_code == 0:
                     self._progress(100, "Selesai (NVENC)")
                     print(f"  [SUCCESS] Klip {clip_num or ''} berhasil diekspor (GPU)")
                     if clip_num is None:
                         messagebox.showinfo("Berhasil", f"Klip berhasil diekspor (GPU):\n{output_filename}")
                     return True
-                else:
-                    print(f"  [GPU] Gagal ({ret_code}), kembali ke CPU...")
+                print(f"  [GPU] NVENC gagal (exit {ret_code}). Ekspor hanya mendukung GPU.")
+                if clip_num is None:
+                    messagebox.showerror("Kesalahan", f"NVENC gagal. Pastikan driver NVIDIA dan FFmpeg dengan NVENC terpasang.")
+                return False
 
-            # CPU Fallback or Default
             print(f"  [CPU] Mengekspor dengan libx264...")
-            cmd = get_ffmpeg_cmd("cpu")
+            cmd = get_ffmpeg_cmd()
             ret_code = run_ffmpeg_realtime(cmd, "CPU-x264", encode_dur, encoder_label="libx264 CPU")
-            
             if ret_code == 0:
                 self._progress(100, "Selesai (CPU libx264)")
                 print(f"  [SUCCESS] Klip {clip_num or ''} berhasil diekspor (CPU)")
                 if clip_num is None:
                     messagebox.showinfo("Berhasil", f"Klip berhasil diekspor (CPU):\n{output_filename}")
                 return True
-            else:
-                print(f"  [ERROR] Ekspor gagal total.")
-                if clip_num is None:
-                    messagebox.showerror("Kesalahan", f"Gagal mengekspor klip. Cek log konsol.")
-                return False
+            print(f"  [ERROR] Ekspor gagal total.")
+            if clip_num is None:
+                messagebox.showerror("Kesalahan", f"Gagal mengekspor klip. Cek log konsol.")
+            return False
                     
         except Exception as e:
             if clip_num is None:
