@@ -1,3 +1,4 @@
 {
+  "/stream-clip/route": "app/stream-clip/route.js",
   "/project/[id]/page": "app/project/[id]/page.js"
 }
