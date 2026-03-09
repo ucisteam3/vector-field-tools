@@ -100,8 +100,9 @@ def _ffmpeg_has_filters(*names: str) -> dict:
             _ffmpeg_filters_cache = out.lower()
         except Exception:
             _ffmpeg_filters_cache = ""
+    import re
     out = _ffmpeg_filters_cache
-    return {n: f" {n.lower()} " in out or f". {n.lower()}" in out for n in names}
+    return {n: bool(re.search(r"\b" + re.escape(n.lower()) + r"\b", out)) for n in names}
 
 
 def _safe_messagebox(kind, title, message):
