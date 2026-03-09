@@ -887,12 +887,14 @@ class ClipExporter:
             use_pure_gpu = use_pure_gpu_possible and not has_heavy_filters and base_supports_gpu
             use_cpu = not use_pure_gpu
 
+            filter_complex_cpu = None  # for NVENC fallback
             if use_pure_gpu:
                 # Pure GPU: decode(GPU) -> scale_cuda/crop_cuda -> NVENC. No hwdownload/hwupload.
                 filter_complex = fc_str
                 print("  [GPU] Pure pipeline: NVDEC + scale_cuda/crop_cuda + NVENC")
             elif use_pure_gpu_possible and not has_heavy_filters and not base_supports_gpu:
                 # GPU decode/encode with CPU filters (hwdownload -> filters -> hwupload)
+                filter_complex_cpu = fc_str  # save for fallback when NVENC fails
                 fc_str = "[0:v]hwdownload,format=nv12[v0];" + fc_str.replace("[0:v]", "[v0]")
                 fc_str = fc_str.replace(f"{last_v_label}[v_out];", f"{last_v_label}hwupload_cuda[v_out];")
                 filter_complex = fc_str
@@ -901,12 +903,13 @@ class ClipExporter:
             else:
                 # Intentional CPU fallback (heavy filters)
                 filter_complex = fc_str
+                filter_complex_cpu = fc_str
                 use_cpu = True
                 if has_heavy_filters:
                     print("  [CPU] Fallback: zoom/subtitle/watermark/blur/overlay require CPU filters")
             use_gpu_encode = use_pure_gpu or (use_pure_gpu_possible and not use_cpu)
 
-            def get_ffmpeg_cmd():
+            def get_ffmpeg_cmd(force_cpu=False):
                 if effective_video_path != str(self.parent.video_path):
                     pad_start = effective_start
                     pad_duration = effective_duration
