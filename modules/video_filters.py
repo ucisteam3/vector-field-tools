@@ -27,8 +27,12 @@ def append_filter(fc: str, chain: str) -> str:
 
 
 def landscape_fit() -> str:
-    """Letterboxed 9:16. Output label: [v_mixed]."""
-    return "[0:v]setsar=1,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black[v_mixed]"
+    """9:16 with blurred background (no black bars). Background scaled + boxblur, foreground centered. Output label: [v_mixed]."""
+    return (
+        "[0:v]scale=1080:1920,boxblur=20:10[bg];"
+        "[0:v]scale=1080:-1[fg];"
+        "[bg][fg]overlay=(W-w)/2:(H-h)/2[v_mixed]"
+    )
 
 
 def portrait_crop() -> str:
