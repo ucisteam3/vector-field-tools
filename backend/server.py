@@ -454,7 +454,8 @@ def export_clip_with_settings(req: ExportClipRequest):
         out_path = out_dir / f"{safe_name}.mp4"
         import subprocess
         duration = end - start
-        cmd = ["ffmpeg", "-y", "-ss", str(start), "-t", str(duration), "-i", str(vp), "-c", "copy", "-avoid_negative_ts", "1", str(out_path)]
+        # -ss after -i for A/V sync (before -i = keyframe seek, causes desync)
+        cmd = ["ffmpeg", "-y", "-i", str(vp), "-ss", str(start), "-t", str(duration), "-c", "copy", "-avoid_negative_ts", "make_zero", str(out_path)]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=180, creationflags=0x08000000 if __import__("os").name == "nt" else 0)
         if result.returncode == 0 and out_path.exists():
             return {"clip_path": f"clips/{safe_name}.mp4"}

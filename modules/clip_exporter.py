@@ -430,11 +430,12 @@ class ClipExporter:
                         '-vn', '-acodec', 'copy', '-avoid_negative_ts', 'make_zero',
                         str(temp_audio)
                     ], capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
-                    # Mux: -avoid_negative_ts + genpts for A/V sync
+                    # Mux: Re-encode video (OpenCV mp4v can have timestamp drift) for A/V sync
                     temp_full = Path(LOCAL_TEMP_DIR) / f"podcast_full_{int(time.time())}.mp4"
                     subprocess.run([
                         'ffmpeg', '-y', '-i', str(temp_video), '-i', str(temp_audio),
-                        '-c:v', 'copy', '-c:a', 'aac', '-shortest',
+                        '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+                        '-c:a', 'aac', '-b:a', '192k', '-shortest',
                         '-fflags', '+genpts', '-avoid_negative_ts', 'make_zero',
                         '-max_muxing_queue_size', '1024',
                         str(temp_full)
