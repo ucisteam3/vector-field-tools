@@ -61,6 +61,11 @@ class AISegmentAnalyzer:
     HOOK_PRE_ROLL_SEC = 2  # Start clip 2s before hook moment
     HOOK_POST_ROLL_MIN = 30
     HOOK_POST_ROLL_MAX = 45
+    # Natural end behavior (speech boundaries)
+    NATURAL_PAUSE_END_SEC = 0.6
+    TOPIC_SHIFT_PAUSE_SEC = 1.0
+    ABS_MIN_CLIP_SEC = 8
+    ABS_MAX_CLIP_SEC = 60
 
     # [HOOK DETECTION] Phrases that mark viral statement moments (strong opening in first 3s)
     HOOK_MOMENT_PATTERNS = [
@@ -643,6 +648,117 @@ class AISegmentAnalyzer:
             moments.append((start_sec, end_sec, text, score))
         return moments
 
+    def _build_subtitle_cues_from_parent(self):
+        """
+        Build SubtitleCue list from self.parent.sub_transcriptions (dict of {start,end,text}).
+        Uses smart_segmentation.SubtitleCue so we can reuse pause + sentence helpers.
+        """
+        cues_dict = getattr(self.parent, "sub_transcriptions", None)
+        if not cues_dict or not isinstance(cues_dict, dict):
+            return []
+        try:
+            from modules.smart_segmentation import SubtitleCue
+        except Exception:
+            return []
+        cues = []
+        for _, c in sorted(cues_dict.items(), key=lambda x: (x[1].get("start", 0) if isinstance(x[1], dict) else 0)):
+            if not isinstance(c, dict):
+                continue
+            s = self._normalize_cue_time(c.get("start") or c.get("s") or 0)
+            e = self._normalize_cue_time(c.get("end") or c.get("e") or (s + 3.0))
+            t = (c.get("text") or c.get("t") or "").strip()
+            if t:
+                cues.append(SubtitleCue(float(s), float(e), t))
+        cues.sort(key=lambda c: c.start)
+        return cues
+
+    def _find_hook_time_in_range(self, start_sec: float, end_sec: float, cues) -> float | None:
+        """
+        Find first hook-ish cue start within [start_sec, end_sec]. Returns cue.start or None.
+        """
+        if not cues:
+            return None
+        for cue in cues:
+            if cue.end < start_sec:
+                continue
+            if cue.start > end_sec:
+                break
+            if self._is_hook_sentence(getattr(cue, "text", "")):
+                return float(cue.start)
+        return None
+
+    def _adaptive_duration_bounds_from_scores(self, hook_score: float, argument_score: float, info_density: float) -> tuple[float, float]:
+        """
+        Variable duration based on signals (rough heuristic):
+        - Strong hook -> 8-15s
+        - Argument/discussion -> 15-40s
+        - High info density -> 40-60s
+        """
+        if hook_score >= 60:
+            return 8.0, 15.0
+        if info_density >= 60:
+            return 40.0, 60.0
+        if argument_score >= 55:
+            return 25.0, 40.0
+        return 15.0, 25.0
+
+    def _natural_clip_window(self, *, base_start: float, base_end: float, hook_time: float | None, cues, min_dur: float, max_dur: float) -> tuple[float, float, float | None]:
+        """
+        Hook-first + subtitle boundaries:
+        - start near hook (hook-2s) snapped to cue.start and skip filler introductions
+        - end at sentence punctuation OR pause>=0.6s, allow continuation until pause>1s/topic shift, cap 60s
+        Returns (clip_start, clip_end, hook_time_used)
+        """
+        if not cues:
+            # Fallback: keep within caps
+            s = max(0.0, (hook_time - self.HOOK_PRE_ROLL_SEC) if hook_time is not None else base_start)
+            e = min(max(s + min_dur, base_end), s + max_dur)
+            return s, e, hook_time
+
+        try:
+            from modules.smart_segmentation import refine_segment_start_hook_first, find_best_boundary_near, refine_segment_end, is_sentence_ending, get_pause_after
+        except Exception:
+            s = max(0.0, (hook_time - self.HOOK_PRE_ROLL_SEC) if hook_time is not None else base_start)
+            e = min(max(s + min_dur, base_end), s + max_dur)
+            return s, e, hook_time
+
+        # --- start ---
+        if hook_time is not None:
+            start = refine_segment_start_hook_first(float(hook_time), float(base_end), cues, pre_roll_sec=self.HOOK_PRE_ROLL_SEC)
+        else:
+            start = find_best_boundary_near(float(base_start), cues, search_window=2.0, is_start=True)
+
+        # --- end ---
+        cap_end = min(float(start) + max_dur, float(start) + self.ABS_MAX_CLIP_SEC)
+        desired_min_end = float(start) + min_dur
+        # Ensure we don't cut mid-sentence at the original end
+        min_end = refine_segment_end(float(base_end), cues, max_extension=min(6.0, max(2.0, cap_end - float(base_end))))
+        end_target = max(desired_min_end, float(base_end), float(min_end))
+        end = find_best_boundary_near(end_target, cues, search_window=3.0, is_start=False, min_end_time=min_end)
+        end = min(float(end), cap_end)
+
+        # Extend naturally forward from the chosen end while keeping bounds (context continuation)
+        # Walk forward cue-by-cue until punctuation or pause>=0.6s and min_dur satisfied; stop at pause>1s or cap.
+        best = float(end)
+        for i, cue in enumerate(cues):
+            if cue.end < best - 0.2:
+                continue
+            if cue.start > cap_end:
+                break
+            best = max(best, float(cue.end))
+            dur_now = best - float(start)
+            pause = get_pause_after(cue, cues)
+            if pause > self.TOPIC_SHIFT_PAUSE_SEC:
+                break
+            if dur_now >= min_dur and (is_sentence_ending(cue.text) or pause >= self.NATURAL_PAUSE_END_SEC):
+                break
+        end = min(best, cap_end)
+
+        if end - float(start) < self.ABS_MIN_CLIP_SEC:
+            end = min(float(start) + self.ABS_MIN_CLIP_SEC, cap_end)
+            end = find_best_boundary_near(end, cues, search_window=3.0, is_start=False)
+        return float(start), float(end), hook_time
+
     def _build_clip_around_hook(self, hook_start: float, hook_end: float, duration_sec: float) -> tuple:
         """
         Build clip around hook: start = hook - 2s, end = hook + 30–45s.
@@ -941,11 +1057,23 @@ class AISegmentAnalyzer:
                 start += step_size
                 continue
 
-            clip_end = min(end, start + max_dur)
-            clip_dur = clip_end - start
-            if clip_dur >= min_dur:
+            # Hook-first + subtitle-boundary clip with variable duration
+            cues = self._build_subtitle_cues_from_parent() if has_cues else []
+            hook_time = self._find_hook_time_in_range(start, end, cues) if cues else start
+            min_d, max_d = self._adaptive_duration_bounds_from_scores(hook, argument, info_density)
+            clip_start, clip_end, hook_used = self._natural_clip_window(
+                base_start=start,
+                base_end=end,
+                hook_time=hook_time,
+                cues=cues,
+                min_dur=min_d,
+                max_dur=max_d,
+            )
+            clip_dur = clip_end - clip_start
+            # Avoid uniform durations: small jitter target (still bound to sentence/pause)
+            if clip_dur >= max(self.ABS_MIN_CLIP_SEC, min_dur) and clip_dur <= self.ABS_MAX_CLIP_SEC:
                 candidates.append({
-                    "start": start,
+                    "start": clip_start,
                     "end": clip_end,
                     "viral_score": round(viral, 1),
                     "hook_score": hook,
@@ -954,7 +1082,7 @@ class AISegmentAnalyzer:
                     "controversy_score": controversy,
                     "info_density_score": info_density,
                     "hook": window_text[:80].strip(),
-                    "_hook_time": start,
+                    "_hook_time": hook_used if hook_used is not None else start,
                 })
             start += step_size
 
