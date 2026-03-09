@@ -164,12 +164,21 @@ class WebAppContext:
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
                     cfg = __import__("json").load(f)
-                # API keys (new format)
+                # API keys (new format). Groq comes from Pastebin (Default API), not config.
                 api = cfg.get("api_keys") or {}
-                for k in ["openai", "gemini", "anthropic", "llama", "deepseek", "groq"]:
+                for k in ["openai", "gemini", "anthropic", "llama", "deepseek"]:
                     v = api.get(k) or []
                     if isinstance(v, list):
                         self.api_keys[k] = [str(x).strip() for x in v if str(x).strip()]
+                try:
+                    try:
+                        from backend.default_api_keys import get_default_api_keys
+                    except ImportError:
+                        from default_api_keys import get_default_api_keys
+                    self.api_keys["groq"] = get_default_api_keys()
+                except Exception as e:
+                    print(f"[WEB] Default API (Groq) keys load: {e}")
+                    self.api_keys["groq"] = []
 
                 st = cfg.get("api_key_state") or {}
                 for k in list(self.api_key_state.keys()):

@@ -137,7 +137,7 @@ def _api_provider_label(provider: str | None) -> str:
         "anthropic": "Anthropic (Claude)",
         "llama": "Meta (Llama)",
         "deepseek": "DeepSeek",
-        "groq": "Groq",
+        "groq": "Default API",
     }
     return labels.get(p, provider)
 

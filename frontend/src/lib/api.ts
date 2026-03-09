@@ -197,6 +197,8 @@ export type ApiKeysPayload = {
   groq: string[];
   rotate_on_error: Record<string, boolean>;
   default_api_provider?: string | null;
+  /** Default API (Groq) keys from Pastebin - built-in, not editable */
+  default_api_available?: boolean;
 };
 
 export async function getApiKeys(): Promise<ApiKeysPayload> {

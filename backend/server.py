@@ -192,31 +192,39 @@ def _normalize_key_lines(keys: list[str]) -> list[str]:
     return uniq
 
 
+def _get_default_api_keys():
+    """Groq keys from Pastebin (Default API). Not stored in config."""
+    try:
+        from backend.default_api_keys import get_default_api_keys
+        return get_default_api_keys()
+    except Exception:
+        return []
+
+
 @app.get("/settings/api_keys")
 def get_api_keys():
-    """Get stored API keys (1 per line in UI). Local-only convenience, returned raw."""
+    """Get stored API keys (1 per line in UI). Groq = Default API from Pastebin, not editable."""
     cfg = _load_root_config()
     api = cfg.get("api_keys") or {}
     rotate = cfg.get("rotate_on_error") or {}
-    # Back-compat with older fields
     if "gemini" not in api and cfg.get("user_gemini_keys"):
         api["gemini"] = cfg.get("user_gemini_keys") or []
-    if "groq" not in api and cfg.get("user_groq_keys"):
-        api["groq"] = cfg.get("user_groq_keys") or []
+    default_keys = _get_default_api_keys()
     return {
         "openai": api.get("openai", []),
         "gemini": api.get("gemini", []),
         "anthropic": api.get("anthropic", []),
         "llama": api.get("llama", []),
         "deepseek": api.get("deepseek", []),
-        "groq": api.get("groq", []),
+        "groq": [],  # never expose; keys from Pastebin in backend only
+        "default_api_available": len(default_keys) > 0,
         "rotate_on_error": {
             "openai": bool(rotate.get("openai", True)),
             "gemini": bool(rotate.get("gemini", True)),
             "anthropic": bool(rotate.get("anthropic", True)),
             "llama": bool(rotate.get("llama", True)),
             "deepseek": bool(rotate.get("deepseek", True)),
-            "groq": bool(rotate.get("groq", True)),
+            "groq": True,
         },
         "default_api_provider": (cfg.get("default_api_provider") or "").strip() or None,
     }
@@ -232,7 +240,8 @@ def save_api_keys(payload: ApiKeysPayload):
     api["anthropic"] = _normalize_key_lines(payload.anthropic)
     api["llama"] = _normalize_key_lines(payload.llama)
     api["deepseek"] = _normalize_key_lines(payload.deepseek)
-    api["groq"] = _normalize_key_lines(payload.groq)
+    # groq = Default API from Pastebin; never store in config
+    api["groq"] = []
     cfg["api_keys"] = api
     # Keep back-compat fields in sync for existing code paths
     cfg["user_gemini_keys"] = api.get("gemini", [])
@@ -296,8 +305,8 @@ def test_api_keys(req: ApiKeyTestRequest):
     keys = api.get(provider) or []
     if provider == "gemini" and not keys and cfg.get("user_gemini_keys"):
         keys = cfg.get("user_gemini_keys") or []
-    if provider == "groq" and not keys and cfg.get("user_groq_keys"):
-        keys = cfg.get("user_groq_keys") or []
+    if provider == "groq" and not keys:
+        keys = _get_default_api_keys()
 
     if not isinstance(keys, list):
         keys = []

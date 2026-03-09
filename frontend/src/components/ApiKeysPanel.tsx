@@ -20,8 +20,7 @@ type ProviderKey =
   | "gemini"
   | "anthropic"
   | "llama"
-  | "deepseek"
-  | "groq";
+  | "deepseek";
 
 const PROVIDERS: Array<{ key: ProviderKey; label: string; hint: string }> = [
   { key: "openai", label: "OpenAI – GPT series", hint: "1 key per baris. Rotation hanya saat key error." },
@@ -29,7 +28,6 @@ const PROVIDERS: Array<{ key: ProviderKey; label: string; hint: string }> = [
   { key: "anthropic", label: "Anthropic – Claude", hint: "Disimpan untuk future use." },
   { key: "llama", label: "Meta – Llama API", hint: "Disimpan untuk future use." },
   { key: "deepseek", label: "DeepSeek API", hint: "Disimpan untuk future use." },
-  { key: "groq", label: "Groq", hint: "Disimpan untuk future use." },
 ];
 
 const EMPTY: ApiKeysPayload = {
@@ -48,6 +46,7 @@ const EMPTY: ApiKeysPayload = {
     groq: true,
   },
 };
+// Groq = Default API from Pastebin; not shown in Settings
 
 export default function ApiKeysPanel() {
   const [loading, setLoading] = useState(true);
@@ -64,7 +63,6 @@ export default function ApiKeysPanel() {
     anthropic: false,
     llama: false,
     deepseek: false,
-    groq: false,
   });
 
   const [form, setForm] = useState<Record<ProviderKey, string>>({
@@ -73,7 +71,6 @@ export default function ApiKeysPanel() {
     anthropic: "",
     llama: "",
     deepseek: "",
-    groq: "",
   });
   const [rotate, setRotate] = useState<Record<string, boolean>>(EMPTY.rotate_on_error);
 
@@ -90,7 +87,6 @@ export default function ApiKeysPanel() {
           anthropic: toText(data.anthropic),
           llama: toText(data.llama),
           deepseek: toText(data.deepseek),
-          groq: toText(data.groq),
         });
         setRotate({ ...EMPTY.rotate_on_error, ...(data.rotate_on_error || {}) });
         setError(null);
@@ -114,7 +110,7 @@ export default function ApiKeysPanel() {
       anthropic: normalizeLines(form.anthropic),
       llama: normalizeLines(form.llama),
       deepseek: normalizeLines(form.deepseek),
-      groq: normalizeLines(form.groq),
+      groq: [], // Default API from Pastebin, not editable
       rotate_on_error: rotate,
     }),
     [form, rotate]

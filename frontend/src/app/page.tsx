@@ -36,9 +36,11 @@ export default function HomePage() {
 
   const apiProviderOptions = (() => {
     if (!apiKeys) return [];
-    const labels: Record<string, string> = { openai: "OpenAI (GPT)", gemini: "Gemini", anthropic: "Anthropic (Claude)", llama: "Meta (Llama)", deepseek: "DeepSeek", groq: "Groq" };
+    const labels: Record<string, string> = { openai: "OpenAI (GPT)", gemini: "Gemini", anthropic: "Anthropic (Claude)", llama: "Meta (Llama)", deepseek: "DeepSeek", groq: "Default API" };
     const out: { value: string; label: string }[] = [];
-    for (const key of ["openai", "gemini", "anthropic", "llama", "deepseek", "groq"]) {
+    const defaultAvailable = !!(apiKeys as { default_api_available?: boolean }).default_api_available;
+    if (defaultAvailable) out.push({ value: "groq", label: "Default API" });
+    for (const key of ["openai", "gemini", "anthropic", "llama", "deepseek"]) {
       const arr = (apiKeys as Record<string, string[]>)[key];
       if (Array.isArray(arr) && arr.some((k) => k && String(k).trim())) out.push({ value: key, label: labels[key] || key });
     }
@@ -63,9 +65,12 @@ export default function HomePage() {
     getCookiesStatus().then(setCookiesStatus).catch(() => {});
     getApiKeys().then((keys) => {
       setApiKeys(keys);
-      const opts = ["openai", "gemini", "anthropic", "llama", "deepseek", "groq"].filter(
-        (k) => Array.isArray((keys as Record<string, string[]>)[k]) && (keys as Record<string, string[]>)[k].some((x) => x && String(x).trim())
-      );
+      const defaultAvailable = !!(keys as { default_api_available?: boolean }).default_api_available;
+      const opts: string[] = defaultAvailable ? ["groq"] : [];
+      for (const k of ["openai", "gemini", "anthropic", "llama", "deepseek"]) {
+        const arr = (keys as Record<string, string[]>)[k];
+        if (Array.isArray(arr) && arr.some((x) => x && String(x).trim())) opts.push(k);
+      }
       const saved = (keys as { default_api_provider?: string | null }).default_api_provider;
       if (saved && opts.includes(saved)) {
         setSelectedApiProvider(saved);
