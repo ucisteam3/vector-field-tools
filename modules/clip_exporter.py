@@ -47,21 +47,27 @@ except ImportError:
     PODCAST_SMART_AVAILABLE = False
 
 
-def _get_video_size(path: str) -> tuple[int, int]:
-    """Get video width, height via ffprobe."""
+def _get_video_info(path: str) -> tuple[int, int, float]:
+    """Get video width, height, fps via ffprobe. Returns (w, h, fps)."""
     try:
         r = subprocess.run(
             ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
-             '-show_entries', 'stream=width,height', '-of', 'csv=p=0', path],
+             '-show_entries', 'stream=width,height,r_frame_rate', '-of', 'csv=p=0', path],
             capture_output=True, text=True, timeout=10,
             creationflags=0x08000000 if os.name == "nt" else 0
         )
         if r.returncode == 0 and r.stdout:
-            w, h = r.stdout.strip().split(',')
-            return int(w), int(h)
+            parts = r.stdout.strip().split(',')
+            w, h = int(parts[0]), int(parts[1])
+            fps = 30.0
+            if len(parts) >= 3 and '/' in parts[2]:
+                num, den = parts[2].split('/')
+                if int(den) != 0:
+                    fps = int(num) / int(den)
+            return w, h, fps
     except Exception:
         pass
-    return 1920, 1080  # fallback
+    return 1920, 1080, 30.0
 
 
 def _gpu_available() -> bool:
@@ -434,65 +440,79 @@ class ClipExporter:
                         sample_rate=5,
                     )
                     tracker.close()
-                    self._progress(15, "Podcast Smart: Memotong frame per-frame...")
-                    cap = cv2.VideoCapture(str(self.parent.video_path))
-                    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, int(result['start'] * fps))
                     pad_start = max(0, result['start'] - 0.2)
                     pad_end = result['start'] + duration + 0.2
+                    pad_dur = pad_end - pad_start
                     temp_full = Path(LOCAL_TEMP_DIR) / f"podcast_full_{int(time.time())}.mp4"
                     temp_audio = Path(LOCAL_TEMP_DIR) / f"podcast_audio_{int(time.time())}.m4a"
                     Path(LOCAL_TEMP_DIR).mkdir(parents=True, exist_ok=True)
-                    # Extract audio first
+                    # Extract audio: -ss -t BEFORE -i for clip-first (fast)
                     subprocess.run([
-                        'ffmpeg', '-y', '-i', str(self.parent.video_path),
-                        '-ss', str(pad_start), '-t', str(pad_end - pad_start),
+                        'ffmpeg', '-y', '-ss', str(pad_start), '-t', str(pad_dur),
+                        '-i', str(self.parent.video_path),
                         '-vn', '-acodec', 'copy', '-avoid_negative_ts', 'make_zero',
                         str(temp_audio)
                     ], capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
                     use_gpu_mux = _gpu_available() and getattr(self.parent, 'gpu_var', None) and self.parent.gpu_var.get()
-                    self._progress(25, f"Podcast Smart: Encode ({'NVENC' if use_gpu_mux else 'CPU'})...")
-                    # Pipe raw frames to ffmpeg - NVENC or libx264 (no OpenCV mp4v)
+                    self._progress(15, "Podcast Smart: Decode clip + crop (FFmpeg)...")
+                    # FFmpeg decode: -ss -t BEFORE -i = only process clip segment (no full-video decode)
+                    src_w, src_h, fps = _get_video_info(str(self.parent.video_path))
+                    sample_rate = 5  # crop_boxes per second from tracker
+                    frames_per_box = max(1, int(fps / sample_rate))
+                    decode_cmd = [
+                        'ffmpeg', '-y', '-ss', str(pad_start), '-t', str(pad_dur),
+                        '-i', str(self.parent.video_path),
+                        '-f', 'rawvideo', '-pix_fmt', 'bgr24', '-s', f'{src_w}x{src_h}',
+                        '-an', '-'
+                    ]
                     nvenc_args = ['-c:v', 'h264_nvenc', '-preset', 'p5', '-tune', 'hq',
                         '-rc:v', 'vbr', '-cq:v', '19', '-b:v', '6M', '-maxrate', '10M', '-bufsize', '12M']
                     cpu_args = ['-c:v', 'libx264', '-preset', 'fast', '-crf', '23']
                     enc_args = nvenc_args if use_gpu_mux else cpu_args
-                    ffmpeg_cmd = [
+                    encode_cmd = [
                         'ffmpeg', '-y',
                         '-f', 'rawvideo', '-pix_fmt', 'bgr24', '-s', '1080x1920', '-r', str(fps),
-                        '-i', 'pipe:0',
-                        '-i', str(temp_audio),
-                        *enc_args,
-                        '-c:a', 'aac', '-b:a', '192k', '-shortest',
+                        '-i', 'pipe:0', '-i', str(temp_audio),
+                        *enc_args, '-c:a', 'aac', '-b:a', '192k', '-shortest',
                         '-fflags', '+genpts', '-avoid_negative_ts', 'make_zero',
                         '-max_muxing_queue_size', '1024', str(temp_full)
                     ]
-                    proc = subprocess.Popen(
-                        ffmpeg_cmd, stdin=subprocess.PIPE,
+                    proc_decode = subprocess.Popen(
+                        decode_cmd, stdout=subprocess.PIPE,
                         creationflags=0x08000000 if os.name == "nt" else 0
                     )
-                    total_frames = len(crop_boxes)
+                    proc_encode = subprocess.Popen(
+                        encode_cmd, stdin=subprocess.PIPE,
+                        creationflags=0x08000000 if os.name == "nt" else 0
+                    )
+                    frame_size = src_w * src_h * 3
+                    total_frames = len(crop_boxes) * frames_per_box
                     frame_idx = 0
-                    while frame_idx < len(crop_boxes):
-                        ret, frame = cap.read()
-                        if not ret:
-                            break
-                        x, y, cw, ch = crop_boxes[min(frame_idx, len(crop_boxes) - 1)]
-                        x, y, cw, ch = int(x), int(y), int(cw), int(ch)
-                        cropped = frame[y:y+ch, x:x+cw]
-                        if cropped.size:
-                            scaled = cv2.resize(cropped, (1080, 1920))
-                            proc.stdin.write(scaled.tobytes())
-                        frame_idx += 1
-                        if total_frames and frame_idx % 10 == 0:
-                            pct = 25 + int(20 * frame_idx / total_frames)
-                            self._progress(min(pct, 45), f"Podcast Smart: Frame {frame_idx}/{total_frames}")
-                    cap.release()
-                    proc.stdin.close()
-                    proc.wait()
-                    if proc.returncode != 0 and use_gpu_mux:
-                        print(f"  [PODCAST] NVENC encode gagal (exit {proc.returncode})")
-                        raise RuntimeError("NVENC gagal pada podcast encode.")
+                    try:
+                        while frame_idx < total_frames:
+                            raw = proc_decode.stdout.read(frame_size)
+                            if len(raw) < frame_size:
+                                break
+                            frame = np.frombuffer(raw, dtype=np.uint8).reshape((src_h, src_w, 3))
+                            box_idx = min(frame_idx // frames_per_box, len(crop_boxes) - 1)
+                            x, y, cw, ch = (int(v) for v in crop_boxes[box_idx])
+                            if cw > 0 and ch > 0:
+                                cropped = frame[y:y+ch, x:x+cw]
+                                if cropped.size:
+                                    scaled = cv2.resize(cropped, (1080, 1920))
+                                    proc_encode.stdin.write(scaled.tobytes())
+                            frame_idx += 1
+                            if frame_idx % 30 == 0:
+                                pct = 15 + int(30 * frame_idx / max(1, total_frames))
+                                self._progress(min(pct, 45), f"Podcast Smart: Frame {frame_idx}/{total_frames}")
+                    finally:
+                        proc_decode.stdout.close()
+                        proc_encode.stdin.close()
+                    proc_decode.wait()
+                    proc_encode.wait()
+                    if proc_decode.returncode != 0 or proc_encode.returncode != 0:
+                        print(f"  [PODCAST] Encode gagal (decode={proc_decode.returncode}, encode={proc_encode.returncode})")
+                        raise RuntimeError("Podcast smart encode gagal.")
                     effective_video_path = str(temp_full)
                     effective_start = 0
                     effective_duration = pad_end - pad_start
@@ -964,6 +984,8 @@ class ClipExporter:
                 rest_inputs = input_args[2:] if len(input_args) > 2 else []
                 # Clip-first: -ss -t BEFORE -i so FFmpeg only decodes the clip segment (3–10x faster)
                 hwaccel = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] if use_gpu_encode else []
+                if effective_video_path == str(self.parent.video_path):
+                    print(f"  [CLIP-FIRST] Processing only {pad_duration:.1f}s segment (no full-video decode)")
                 base_cmd = [
                     'ffmpeg', '-y', '-fflags', '+genpts', '-avoid_negative_ts', 'make_zero',
                     '-ss', str(pad_start), '-t', str(pad_duration),
