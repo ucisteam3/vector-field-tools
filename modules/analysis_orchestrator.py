@@ -83,12 +83,34 @@ class AnalysisOrchestrator:
                                 self.parent.progress_bar.stop()
                             return
             else:
-                # Step 1: Download video (URL Mode)
-                print("[STEP 1] Mengunduh video...")
-                if getattr(self.parent, "progress_var", None):
-                    self.parent.progress_var.set("Sedang mengunduh video dari YouTube...")
-                video_path = self.parent.download_youtube_video(url)
-            
+                # Check if video already exists in downloads folder
+                video_id = None
+                if "youtube.com" in url or "youtu.be" in url:
+                    import re
+                    match = re.search(r"(?:v=|youtu.be/)([A-Za-z0-9_-]{11})", url)
+                    if match:
+                        video_id = match.group(1)
+
+                downloads_dir = "downloads"
+                existing_video = None
+
+                if video_id and os.path.isdir(downloads_dir):
+                    for f in os.listdir(downloads_dir):
+                        if video_id in f and f.endswith(".mp4"):
+                            existing_video = os.path.join(downloads_dir, f)
+                            break
+
+                if existing_video and os.path.exists(existing_video):
+                    print(f"[CACHE] Using existing video: {existing_video}")
+                    video_path = existing_video
+                else:
+                    print("[STEP 1] Mengunduh video...")
+                    if getattr(self.parent, "progress_var", None):
+                        self.parent.progress_var.set("Sedang mengunduh video dari YouTube...")
+                    video_path = self.parent.download_youtube_video(url)
+
+                print("[ANALYSIS] Starting analysis using cached video file")
+
             if not video_path:
                 raise Exception("Gagal mengunduh video")
             
