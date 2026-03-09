@@ -90,27 +90,41 @@ class AIEngine:
         """
         self.parent = parent
         self._openai_client = None
-        api_key = None
+
+        # Respect preferred provider from WebAppContext (dropdown on dashboard)
+        preferred = None
         try:
-            # Prefer keys from WebAppContext/settings (multi-key rotation)
-            if parent and hasattr(parent, "get_openai_key"):
-                api_key = parent.get_openai_key()
+            preferred = getattr(parent, "preferred_ai_provider", None)
         except Exception:
-            api_key = None
-        if not api_key:
-            api_key = load_openai_key()
-        if OPENAI_AVAILABLE and api_key:
+            preferred = None
+        preferred = (preferred or "").strip().lower() or None
+
+        # Only initialize OpenAI client when either explicitly selected or no preference
+        api_key = None
+        if preferred in (None, "", "openai"):
             try:
-                self._openai_client = OpenAI(api_key=api_key)
-                self.openai_available = True
-                print("[OPENAI] Client initialized - GPT-4o will be used for ranking, titles, and hook refinement.")
-            except Exception as e:
+                # Prefer keys from WebAppContext/settings (multi-key rotation)
+                if parent and hasattr(parent, "get_openai_key"):
+                    api_key = parent.get_openai_key()
+            except Exception:
+                api_key = None
+            if not api_key:
+                api_key = load_openai_key()
+            if OPENAI_AVAILABLE and api_key:
+                try:
+                    self._openai_client = OpenAI(api_key=api_key)
+                    self.openai_available = True
+                    print("[OPENAI] Client initialized - GPT-4o will be used for ranking, titles, and hook refinement.")
+                except Exception as e:
+                    self.openai_available = False
+                    print(f"[OPENAI] Client init failed: {e}. OpenAI will be skipped.")
+            else:
                 self.openai_available = False
-                print(f"[OPENAI] Client init failed: {e}. OpenAI will be skipped.")
+                if not OPENAI_AVAILABLE:
+                    print("[OPENAI] Package 'openai' not installed. Run: pip install openai")
         else:
+            # User chose non-OpenAI provider: disable OpenAI for this run
             self.openai_available = False
-            if not OPENAI_AVAILABLE:
-                print("[OPENAI] Package 'openai' not installed. Run: pip install openai")
 
     def _maybe_rotate_openai_on_error(self, err: Exception) -> bool:
         """Rotate OpenAI key only when the current key errors/unusable."""
