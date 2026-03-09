@@ -416,7 +416,9 @@ class ClipExporter:
             print(f"  [EXPORT] Mode: {export_mode}")
 
             # Heavy filters force CPU fallback (no CUDA equivalents: zoompan, subtitles, drawtext, boxblur, overlay)
+            # Landscape mode selalu pakai boxblur+overlay -> harus CPU agar export berhasil
             has_heavy_filters = (
+                export_mode == "landscape_fit" or
                 self.parent.custom_settings.get("dynamic_zoom_enabled", False) or
                 bool(ass_path) or
                 self.parent.custom_settings.get("watermark_enabled", False) or
