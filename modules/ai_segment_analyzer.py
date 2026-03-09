@@ -46,10 +46,10 @@ class AISegmentAnalyzer:
         return None
 
     # [MOMENT-FIRST] Window scanning for short viral moments
-    WINDOW_SIZE_SEC = 18
-    WINDOW_OVERLAP_SEC = 4
-    TOP_CANDIDATES_FOR_OPENAI = 250  # 120–250 candidate moments per hour
-    TARGET_CLIPS_PER_HOUR = 20
+    WINDOW_SIZE_SEC = 12
+    WINDOW_OVERLAP_SEC = 2
+    TOP_CANDIDATES_FOR_OPENAI = 600  # 120–250 candidate moments per hour
+    TARGET_CLIPS_PER_HOUR = 35
     CLIP_MIN_DURATION_SEC = 10
     CLIP_MAX_DURATION_SEC = 60
 
@@ -58,8 +58,8 @@ class AISegmentAnalyzer:
     OPUS_STEP_SIZE = 6
     OPUS_CLIP_MIN = 10
     OPUS_CLIP_MAX = 60
-    OPUS_TOP_CLIPS = 30
-    OPUS_OVERLAP_THRESHOLD = 0.85
+    OPUS_TOP_CLIPS = 50
+    OPUS_OVERLAP_THRESHOLD = 0.95
     HOOK_PRE_ROLL_SEC = 2  # Start clip 2s before hook moment
     HOOK_POST_ROLL_MIN = 30
     HOOK_POST_ROLL_MAX = 45
@@ -203,14 +203,27 @@ class AISegmentAnalyzer:
         return t
 
     def _is_filler_heavy(self, text: str) -> bool:
-        """True if segment has mostly filler words or very low information density."""
+        """
+        Detect segments that contain mostly filler words.
+        This version is less aggressive to avoid removing valid clips.
+        """
         if not text or not text.strip():
             return True
         cleaned = self._clean_filler_words(text)
-        if len(cleaned.strip()) < 25:
+        # Only reject extremely short segments
+        if len(cleaned.strip()) < 10:
             return True
         words = cleaned.split()
-        if len(words) < 4:
+        # Allow segments with small word counts
+        if len(words) < 3:
+            return False
+        # Calculate filler ratio
+        filler_count = 0
+        for f in self.FILLER_WORDS:
+            filler_count += cleaned.lower().count(f)
+        filler_ratio = filler_count / max(len(words), 1)
+        # Reject only if more than 70% filler
+        if filler_ratio > 0.7:
             return True
         return False
 
