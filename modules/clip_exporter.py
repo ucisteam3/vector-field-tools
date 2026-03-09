@@ -624,7 +624,8 @@ class ClipExporter:
                 zoom_strength = max(1.1, min(2.0, zoom_strength))
                 zoom_speed = max(0.0015, min(0.008, zoom_speed))  # lebih cepat biar terasa
                 print(f"  [DYNAMIC ZOOM] strength={zoom_strength}, speed={zoom_speed}")
-                fc_str += f"[v_mixed]zoompan=z='min(zoom+{zoom_speed:.4f},{zoom_strength:.2f})':d=1:s=1080x1920[v_mixed];"
+                # Force stable output fps from zoompan to avoid duplicated frames / slow-motion playback
+                fc_str += f"[v_mixed]zoompan=z='min(zoom+{zoom_speed:.4f},{zoom_strength:.2f})':d=1:s=1080x1920:fps=30[v_mixed];"
             
             # --- VIDEO FLIP LOGIC (Anti-Copyright) ---
             # Apply flip BEFORE text overlays so text remains readable
@@ -996,7 +997,6 @@ class ClipExporter:
                     *rest_inputs,
                     '-filter_complex', filter_complex,
                     '-map', '[v_out]', '-map', '[a_out]',
-                    '-r', '30',
                     '-max_muxing_queue_size', '1024',
                 ]
                 if use_gpu_encode:
