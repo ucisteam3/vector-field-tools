@@ -937,9 +937,10 @@ class ClipExporter:
                 except Exception as e:
                     print(f"  [SOURCE CREDIT ERROR] {e}")
 
-            # Fix slow motion: -ss before -i can produce wrong PTS -> reset with setpts
+            # Fix slow motion/A-V desync: setpts at start (trim), fps+setpts at end (normalize after zoompan etc)
             fc_str = "[0:v]setpts=PTS-STARTPTS[v_pts];" + fc_str.replace("[0:v]", "[v_pts]")
-            fc_str += f"{last_v_label}null[v_out];"
+            # Force 30fps + reset PTS at end to avoid VFR/timestamp glitches from zoompan
+            fc_str += f"{last_v_label}fps=30,setpts=PTS-STARTPTS[v_out];"
             
             # --- AUDIO PITCH (optional) ---
             pitch_enabled = self.parent.custom_settings.get("audio_pitch_enabled", False)
@@ -963,7 +964,7 @@ class ClipExporter:
             elif use_pure_gpu_possible and not has_heavy_filters and not base_supports_gpu:
                 # GPU decode/encode with CPU filters (hwdownload -> filters -> hwupload)
                 fc_str = "[0:v]hwdownload,format=nv12[v0];" + fc_str.replace("[0:v]", "[v0]")
-                fc_str = fc_str.replace(f"{last_v_label}null[v_out];", f"{last_v_label}hwupload_cuda[v_out];")
+                fc_str = fc_str.replace(f"{last_v_label}fps=30,setpts=PTS-STARTPTS[v_out];", f"{last_v_label}fps=30,setpts=PTS-STARTPTS,hwupload_cuda[v_out];")
                 filter_complex = fc_str
                 use_cpu = False  # Still using NVENC
                 print("  [GPU] Hybrid: NVDEC + CPU filters + NVENC")
