@@ -148,6 +148,12 @@ class AISegmentAnalyzer:
     HUMOR_MARKERS = ["[tertawa]", "(tertawa)", "haha", "hehe", "wkwk", "wkwkwk"]
     ARGUMENT_SIGNALS = ["tapi", "namun", "justru", "saya tidak setuju", "masalahnya", "sebaliknya", "padahal"]
     SURPRISE_PATTERNS = ["ternyata", "bahkan", "tidak disangka", "yang bikin kaget", "anehnya"]
+    # Strong verbs / action markers (golden moment signal)
+    STRONG_VERB_MARKERS = [
+        "bikin", "mengubah", "menghancurkan", "mengagetkan", "menyelamatkan",
+        "meledak", "bongkar", "buktinya", "terbukti", "kalah", "menang",
+        "hancur", "viral", "trending",
+    ]
 
     # Emotional/dramatic keywords - boost score for viral moment prioritization (post-AI)
     HIGHLIGHT_KEYWORDS = [
@@ -648,6 +654,146 @@ class AISegmentAnalyzer:
             moments.append((start_sec, end_sec, text, score))
         return moments
 
+    def _detect_golden_moments(self, cues, *, max_moments: int = 24, min_separation_sec: float = 10.0) -> list[dict]:
+        """
+        [GOLDEN MOMENT] Detect timestamps where multiple strong signals co-occur.
+        Returns list of dicts: {t, score, text, signals}.
+
+        Signals & weights (requested):
+        - hook phrase: +4
+        - surprise phrase: +4
+        - argument marker: +3
+        - emotional keyword: +3
+        - humor marker: +2
+        - strong verb: +2
+        """
+        sentences = self._get_timestamped_sentences()
+        if not sentences:
+            return []
+
+        def score_text(text: str) -> tuple[float, list[str]]:
+            t = (text or "").lower()
+            if not t.strip():
+                return 0.0, []
+            s = 0.0
+            sig = []
+            # hook phrase (existing hook patterns)
+            if any(p in t for p in (self.HOOK_MOMENT_PATTERNS or [])):
+                s += 4
+                sig.append("hook")
+            # surprise
+            if any(p in t for p in (self.SURPRISE_PATTERNS or [])):
+                s += 4
+                sig.append("surprise")
+            # argument
+            if any(p in t for p in (self.ARGUMENT_SIGNALS or [])):
+                s += 3
+                sig.append("argument")
+            # emotion
+            if any(p in t for p in (self.EMOTION_KEYWORDS or [])):
+                s += 3
+                sig.append("emotion")
+            # humor
+            if any(p in t for p in (self.HUMOR_MARKERS or [])):
+                s += 2
+                sig.append("humor")
+            # strong verbs
+            if any(p in t for p in (self.STRONG_VERB_MARKERS or [])):
+                s += 2
+                sig.append("verb")
+            return s, sig
+
+        raw = []
+        for start_sec, end_sec, text in sentences:
+            base, sig = score_text(text)
+            if base <= 0:
+                continue
+            # small boosters for dramatic connectors + highlight keywords
+            tl = (text or "").lower()
+            if any(w in tl for w in (self.CONNECTOR_WORDS or [])):
+                base += 1.5
+            if any(w in tl for w in (self.HIGHLIGHT_KEYWORDS or [])):
+                base += 1.0
+            # penalize greetings / pure intro lines
+            if any(g in tl[:140] for g in (self.GREETING_PATTERNS or [])):
+                base -= 4.0
+            if self._is_filler_heavy(text):
+                base -= 2.0
+            if base >= 5.0:
+                raw.append({"t": float(start_sec), "score": float(base), "text": (text or "").strip(), "signals": sig})
+
+        raw.sort(key=lambda m: m["score"], reverse=True)
+        picked: list[dict] = []
+        for m in raw:
+            if len(picked) >= max_moments:
+                break
+            if any(abs(m["t"] - p["t"]) < min_separation_sec for p in picked):
+                continue
+            picked.append(m)
+        picked.sort(key=lambda m: m["t"])
+        return picked
+
+    def _dedupe_by_text_similarity(self, segments: list[dict], *, sim_threshold: float = 0.86) -> list[dict]:
+        """
+        [DIVERSITY] Remove near-identical transcript content.
+        Keeps higher-scoring segment when similarity is high.
+        """
+        if not segments:
+            return []
+        try:
+            from modules.smart_segmentation import sentence_similarity
+        except Exception:
+            return segments
+
+        out: list[dict] = []
+        for seg in sorted(segments, key=lambda s: s.get("final_score", s.get("viral_score", 0)), reverse=True):
+            t = (seg.get("transcript") or seg.get("hook") or "").strip()
+            if not t:
+                out.append(seg)
+                continue
+            dup = False
+            for kept in out:
+                kt = (kept.get("transcript") or kept.get("hook") or "").strip()
+                if not kt:
+                    continue
+                if sentence_similarity(t[:420], kt[:420]) >= sim_threshold:
+                    dup = True
+                    break
+            if not dup:
+                out.append(seg)
+        # preserve chronological order for downstream refiners; caller can re-sort
+        out.sort(key=lambda s: s.get("start", 0))
+        return out
+
+    def _compute_hook_strength(self, full_text: str, first_3s_text: str) -> float:
+        """
+        [HOOK STRENGTH] Emphasize hooks in first ~3 seconds plus dramatic connectors.
+        Returns 0..100-ish.
+        """
+        t0 = (first_3s_text or "").lower()
+        t = (full_text or "").lower()
+        strength = 0.0
+        if any(p in t0 for p in (self.HOOK_MOMENT_PATTERNS or [])):
+            strength += 45
+        if any(p in t0 for p in (self.SURPRISE_PATTERNS or [])):
+            strength += 25
+        if any(p in t0 for p in (self.ARGUMENT_SIGNALS or [])):
+            strength += 18
+        if any(p in t0 for p in (self.EMOTION_KEYWORDS or [])):
+            strength += 18
+        if any(p in t0 for p in (self.CONNECTOR_WORDS or [])):
+            strength += 12
+        # light boost if the whole clip contains multiple signals
+        sig_count = 0
+        for group in (self.HOOK_MOMENT_PATTERNS, self.SURPRISE_PATTERNS, self.ARGUMENT_SIGNALS, self.EMOTION_KEYWORDS, self.HUMOR_MARKERS):
+            try:
+                if any(p in t for p in (group or [])):
+                    sig_count += 1
+            except Exception:
+                pass
+        strength += sig_count * 5
+        return float(max(0.0, min(100.0, strength)))
+
     def _build_subtitle_cues_from_parent(self):
         """
         Build SubtitleCue list from self.parent.sub_transcriptions (dict of {start,end,text}).
@@ -717,6 +863,7 @@ class AISegmentAnalyzer:
 
         try:
             from modules.smart_segmentation import refine_segment_start_hook_first, find_best_boundary_near, refine_segment_end, is_sentence_ending, get_pause_after
+            from modules.smart_segmentation import is_topic_shift
         except Exception:
             s = max(0.0, (hook_time - self.HOOK_PRE_ROLL_SEC) if hook_time is not None else base_start)
             e = min(max(s + min_dur, base_end), s + max_dur)
@@ -740,6 +887,7 @@ class AISegmentAnalyzer:
         # Extend naturally forward from the chosen end while keeping bounds (context continuation)
         # Walk forward cue-by-cue until punctuation or pause>=0.6s and min_dur satisfied; stop at pause>1s or cap.
         best = float(end)
+        prev_cue = None
         for i, cue in enumerate(cues):
             if cue.end < best - 0.2:
                 continue
@@ -750,8 +898,15 @@ class AISegmentAnalyzer:
             pause = get_pause_after(cue, cues)
             if pause > self.TOPIC_SHIFT_PAUSE_SEC:
                 break
+            if prev_cue is not None:
+                try:
+                    if is_topic_shift(prev_cue.text, cue.text) and dur_now >= min_dur:
+                        break
+                except Exception:
+                    pass
             if dur_now >= min_dur and (is_sentence_ending(cue.text) or pause >= self.NATURAL_PAUSE_END_SEC):
                 break
+            prev_cue = cue
         end = min(best, cap_end)
 
         if end - float(start) < self.ABS_MIN_CLIP_SEC:
@@ -1019,6 +1174,7 @@ class AISegmentAnalyzer:
         max_dur = self.OPUS_CLIP_MAX
         top_n = self.OPUS_TOP_CLIPS
         has_cues = bool(getattr(self.parent, "sub_transcriptions", None))
+        cues = self._build_subtitle_cues_from_parent() if has_cues else []
 
         def get_window_text(s, e):
             if has_cues:
@@ -1026,6 +1182,68 @@ class AISegmentAnalyzer:
             return self._slice_transcript_by_time(formatted_transcript, s, e)
 
         candidates = []
+
+        # [GOLDEN MOMENT] Anchor-first candidates before sliding windows
+        if cues:
+            target = max(10, min(40, int((duration_sec / 3600.0) * self.TARGET_CLIPS_PER_HOUR) + 8))
+            golden = self._detect_golden_moments(cues, max_moments=target, min_separation_sec=10.0)
+            for m in golden:
+                t0 = float(m["t"])
+                base_start = max(0.0, t0 - self.HOOK_PRE_ROLL_SEC)
+                base_end = min(duration_sec, t0 + 35.0)
+                window_text = get_window_text(base_start, base_end)
+                if len(window_text.strip()) < 30 or self._is_filler_heavy(window_text):
+                    continue
+                first_3s_text = get_window_text(base_start, min(base_end, base_start + 3.5))
+                hook = self._compute_hook_score(window_text, first_3s_text)
+                emotion = self._compute_emotion_score(window_text)
+                argument = self._compute_argument_score(window_text)
+                controversy = self._compute_controversy_score(window_text)
+                info_density = self._compute_information_density_score(window_text)
+                viral = (
+                    0.35 * hook + 0.25 * emotion + 0.20 * argument
+                    + 0.10 * controversy + 0.10 * info_density
+                )
+                if viral < 1.5:
+                    continue
+                min_d, max_d = self._adaptive_duration_bounds_from_scores(hook, argument, info_density)
+                clip_start, clip_end, hook_used = self._natural_clip_window(
+                    base_start=base_start,
+                    base_end=base_end,
+                    hook_time=t0,
+                    cues=cues,
+                    min_dur=min_d,
+                    max_dur=max_d,
+                )
+                if (clip_end - clip_start) < float(self.ABS_MIN_CLIP_SEC):
+                    continue
+
+                hook_strength = self._compute_hook_strength(window_text, first_3s_text)
+                moment_score = float(m.get("score", 0.0))
+                hs = 1.0 + (hook_strength / 100.0)
+                em = 1.0 + (emotion / 100.0)
+                ar = 1.0 + (argument / 100.0)
+                eng = 1.0 + (min(100.0, max(0.0, viral)) / 120.0)
+                golden_final = (moment_score * 2.0) * hs * em * ar * eng
+
+                candidates.append({
+                    "start": clip_start,
+                    "end": clip_end,
+                    "viral_score": round(float(viral), 1),
+                    "hook_score": hook,
+                    "hook_strength": round(hook_strength, 1),
+                    "emotion_score": emotion,
+                    "argument_score": argument,
+                    "controversy_score": controversy,
+                    "info_density_score": info_density,
+                    "moment_score": round(moment_score, 2),
+                    "final_score": round(float(golden_final), 2),
+                    "hook": (m.get("text") or window_text[:80] or "").strip(),
+                    "transcript": window_text.strip(),
+                    "_hook_time": hook_used if hook_used is not None else t0,
+                    "_golden_anchor": True,
+                    "_signals": m.get("signals") or [],
+                })
         start = 0
         while start + min_dur <= duration_sec:
             end = min(start + window_size, duration_sec)
@@ -1058,7 +1276,6 @@ class AISegmentAnalyzer:
                 continue
 
             # Hook-first + subtitle-boundary clip with variable duration
-            cues = self._build_subtitle_cues_from_parent() if has_cues else []
             hook_time = self._find_hook_time_in_range(start, end, cues) if cues else start
             min_d, max_d = self._adaptive_duration_bounds_from_scores(hook, argument, info_density)
             clip_start, clip_end, hook_used = self._natural_clip_window(
@@ -1072,21 +1289,25 @@ class AISegmentAnalyzer:
             clip_dur = clip_end - clip_start
             # Avoid uniform durations: small jitter target (still bound to sentence/pause)
             if clip_dur >= max(self.ABS_MIN_CLIP_SEC, min_dur) and clip_dur <= self.ABS_MAX_CLIP_SEC:
+                hook_strength = self._compute_hook_strength(window_text, first_3s_text)
                 candidates.append({
                     "start": clip_start,
                     "end": clip_end,
                     "viral_score": round(viral, 1),
                     "hook_score": hook,
+                    "hook_strength": round(hook_strength, 1),
                     "emotion_score": emotion,
                     "argument_score": argument,
                     "controversy_score": controversy,
                     "info_density_score": info_density,
                     "hook": window_text[:80].strip(),
+                    "transcript": window_text.strip(),
                     "_hook_time": hook_used if hook_used is not None else start,
                 })
             start += step_size
 
-        candidates.sort(key=lambda x: x["viral_score"], reverse=True)
+        # Prefer golden anchors (final_score) when available, otherwise viral_score
+        candidates.sort(key=lambda x: (x.get("final_score", 0), x.get("viral_score", 0)), reverse=True)
         deduped = []
         for seg in candidates:
             overlap_any = False
@@ -1100,6 +1321,32 @@ class AISegmentAnalyzer:
                 deduped.append(seg)
             if len(deduped) >= top_n:
                 break
+        deduped = deduped[:top_n]
+
+        # [DIVERSITY] Remove near-duplicate transcript content after overlap dedupe
+        deduped = self._dedupe_by_text_similarity(deduped, sim_threshold=0.86)
+
+        # [DURATION DIVERSITY] Nudge ends slightly to avoid uniform lengths (only when cues exist)
+        if cues and len(deduped) > 1:
+            try:
+                from modules.smart_segmentation import find_best_boundary_near
+            except Exception:
+                find_best_boundary_near = None
+            if find_best_boundary_near:
+                seen_bucket: dict[int, int] = {}
+                for seg in deduped:
+                    dur_s = float(seg["end"] - seg["start"])
+                    bucket = int(round(dur_s / 5.0) * 5)
+                    seen_bucket[bucket] = seen_bucket.get(bucket, 0) + 1
+                    if seen_bucket[bucket] <= 2:
+                        continue
+                    target_end = float(seg["end"]) + (1.6 if (seen_bucket[bucket] % 2 == 0) else -1.2)
+                    target_end = max(float(seg["start"]) + float(self.ABS_MIN_CLIP_SEC), min(float(seg["start"]) + float(self.ABS_MAX_CLIP_SEC), target_end))
+                    nudged = float(find_best_boundary_near(target_end, cues, search_window=2.5, is_start=False))
+                    if nudged > float(seg["start"]) + float(self.ABS_MIN_CLIP_SEC):
+                        seg["end"] = nudged
+
+        deduped.sort(key=lambda x: (x.get("final_score", 0), x.get("viral_score", 0)), reverse=True)
         return deduped[:top_n]
 
     def get_viral_segments_from_ai(self, raw_transcript, keyword=None):
