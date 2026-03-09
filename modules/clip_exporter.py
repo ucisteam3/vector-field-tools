@@ -998,6 +998,7 @@ class ClipExporter:
                     *rest_inputs,
                     '-filter_complex', filter_complex,
                     '-map', '[v_out]', '-map', '[a_out]',
+                    '-r', '30',
                     '-max_muxing_queue_size', '1024',
                 ]
                 if use_gpu_encode:
