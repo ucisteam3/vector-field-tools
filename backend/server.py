@@ -269,7 +269,9 @@ def clip_thumbnail(project_id: str, clip_index: int):
     seek = start + min(1.0, duration * 0.15)
     out_dir = PROJECTS_DIR / project_id / "clips"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"_thumb_{clip_index}.jpg"
+    out_path = out_dir / f"_thumb_{clip_index}_{int(start)}_{int(end)}.jpg"
+    if out_path.exists():
+        return FileResponse(out_path, media_type="image/jpeg")
     try:
         cmd = [
             "ffmpeg", "-y",
@@ -362,6 +364,9 @@ def extract_clip_segment(project_id: str, clip_index: int):
     safe_name = "".join(c for c in title if c.isalnum() or c in (" ", "-", "_")).strip() or f"clip_{clip_index + 1}"
     out_dir = PROJECTS_DIR / project_id / "clips"
     out_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = out_dir / f"_extract_{clip_index}_{int(start)}_{int(end)}.mp4"
+    if cache_path.exists():
+        return FileResponse(cache_path, media_type="video/mp4", filename=f"{safe_name}.mp4")
     out_path = out_dir / f"{safe_name}_{clip_index}.mp4"
     try:
         duration = end - start
@@ -372,12 +377,12 @@ def extract_clip_segment(project_id: str, clip_index: int):
             "-t", str(duration),
             "-c", "copy",
             "-avoid_negative_ts", "1",
-            str(out_path),
+            str(cache_path),
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, creationflags=0x08000000 if __import__("os").name == "nt" else 0)
-        if result.returncode != 0 or not out_path.exists():
+        if result.returncode != 0 or not cache_path.exists():
             raise HTTPException(status_code=500, detail="FFmpeg extraction failed")
-        return FileResponse(out_path, media_type="video/mp4", filename=f"{safe_name}.mp4")
+        return FileResponse(cache_path, media_type="video/mp4", filename=f"{safe_name}.mp4")
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="Extraction timeout")
     except Exception as e:

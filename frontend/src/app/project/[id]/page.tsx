@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
@@ -62,22 +62,6 @@ export default function ProjectPage() {
   useEffect(() => () => {
     Object.values(blobCacheRef.current).forEach((url) => URL.revokeObjectURL(url));
   }, []);
-
-  const preloadClip = useCallback(
-    (index: number) => {
-      if (!project?.clips?.[index] || blobCache[index]) return;
-      fetchPreviewAsBlobUrl(id, index).then((url) => {
-        setBlobCache((prev) => {
-          if (prev[index]) {
-            URL.revokeObjectURL(url);
-            return prev;
-          }
-          return { ...prev, [index]: url };
-        });
-      }).catch(() => {});
-    },
-    [id, project?.clips, blobCache]
-  );
 
   const playClip = async (index: number) => {
     const clip = project?.clips?.[index];
@@ -189,7 +173,6 @@ export default function ProjectPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.03 }}
                   className="rounded-lg border border-white/10 bg-white/5 overflow-hidden hover:bg-white/10 transition-colors group"
-                  onMouseEnter={() => preloadClip(i)}
                 >
                   <div className="relative aspect-[9/16] bg-zinc-900">
                     {playingClip === i && blobCache[i] ? (
@@ -213,6 +196,7 @@ export default function ProjectPage() {
                         <img
                           src={thumbnailClipUrl(id, i)}
                           alt=""
+                          loading="lazy"
                           className="absolute inset-0 w-full h-full object-cover"
                           onError={(e) => {
                             (e.target as HTMLImageElement).style.display = "none";
