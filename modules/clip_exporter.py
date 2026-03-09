@@ -292,10 +292,11 @@ class ClipExporter:
                     
                     # 1. Extract audio from original video for this specific segment
                     temp_audio_cut = Path(LOCAL_TEMP_DIR) / f"sub_audio_{int(time.time())}.wav"
-                    # FFmpeg extract audio segment
+                    # [A/V SYNC] -ss AFTER -i for frame-accurate seek (avoids audio/video desync)
                     sub_cmd = [
-                        'ffmpeg', '-y', '-ss', str(result['start']), '-t', str(duration),
-                        '-i', str(self.parent.video_path), '-ac', '1', '-ar', '16000', str(temp_audio_cut)
+                        'ffmpeg', '-y', '-i', str(self.parent.video_path),
+                        '-ss', str(result['start']), '-t', str(duration),
+                        '-ac', '1', '-ar', '16000', str(temp_audio_cut)
                     ]
                     subprocess.run(sub_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000)
                     
@@ -422,18 +423,20 @@ class ClipExporter:
                     temp_audio = Path(LOCAL_TEMP_DIR) / f"podcast_audio_{int(time.time())}.m4a"
                     pad_start = max(0, result['start'] - 0.2)
                     pad_end = result['start'] + duration + 0.2
+                    # [A/V SYNC] -ss after -i, -avoid_negative_ts for clean timestamps
                     subprocess.run([
                         'ffmpeg', '-y', '-i', str(self.parent.video_path),
                         '-ss', str(pad_start), '-t', str(pad_end - pad_start),
-                        '-vn', '-acodec', 'copy',
+                        '-vn', '-acodec', 'copy', '-avoid_negative_ts', 'make_zero',
                         str(temp_audio)
                     ], capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
-                    # Mux
+                    # Mux: -avoid_negative_ts + genpts for A/V sync
                     temp_full = Path(LOCAL_TEMP_DIR) / f"podcast_full_{int(time.time())}.mp4"
                     subprocess.run([
                         'ffmpeg', '-y', '-i', str(temp_video), '-i', str(temp_audio),
                         '-c:v', 'copy', '-c:a', 'aac', '-shortest',
-                        '-fflags', '+genpts', '-max_muxing_queue_size', '1024',
+                        '-fflags', '+genpts', '-avoid_negative_ts', 'make_zero',
+                        '-max_muxing_queue_size', '1024',
                         str(temp_full)
                     ], capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
                     effective_video_path = str(temp_full)
@@ -890,6 +893,7 @@ class ClipExporter:
                 base_cmd = [
                     'ffmpeg', '-y',
                     '-fflags', '+genpts',        # Regenerate PTS for sync
+                    '-avoid_negative_ts', 'make_zero',  # Fix timestamp drift causing A/V desync
                     *first_input,
                     '-ss', str(pad_start),
                     '-t', str(pad_duration),
