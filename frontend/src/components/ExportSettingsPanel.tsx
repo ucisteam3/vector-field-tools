@@ -9,6 +9,7 @@ import {
   EXPORT_MODE_OPTIONS,
 } from "@/lib/export-settings";
 import { getFonts, uploadBgm, uploadWatermarkImage } from "@/lib/api";
+import { useModal } from "@/components/ModalProvider";
 
 type Props = {
   settings: ExportSettings;
@@ -78,6 +79,7 @@ function Checkbox({
 }
 
 export default function ExportSettingsPanel({ settings, onChange, standalone = false, onSave }: Props) {
+  const modal = useModal();
   const [fonts, setFonts] = useState<string[]>(["Arial"]);
   const [bgmUploading, setBgmUploading] = useState(false);
   const [watermarkUploading, setWatermarkUploading] = useState(false);
@@ -98,7 +100,7 @@ export default function ExportSettingsPanel({ settings, onChange, standalone = f
       const { path } = await uploadBgm(file);
       update({ bgm_file_path: path, bgm_enabled: true });
     } catch (err) {
-      alert(String(err));
+      await modal.alert(String(err), { title: "Upload BGM gagal" });
     } finally {
       setBgmUploading(false);
       e.target.value = "";
@@ -336,7 +338,7 @@ export default function ExportSettingsPanel({ settings, onChange, standalone = f
                       const { path } = await uploadWatermarkImage(file);
                       update({ watermark_image_path: path });
                     } catch (err) {
-                      alert(String(err));
+                      await modal.alert(String(err), { title: "Upload watermark gagal" });
                     } finally {
                       setWatermarkUploading(false);
                       e.target.value = "";

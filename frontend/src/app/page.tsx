@@ -210,7 +210,7 @@ export default function HomePage() {
                         await uploadCookies(f);
                         setCookiesStatus(await getCookiesStatus());
                       } catch (err) {
-                        alert(String(err));
+                        await modal.alert(String(err), { title: "Upload cookies gagal" });
                       } finally {
                         setUploadingCookies(false);
                         e.target.value = "";
