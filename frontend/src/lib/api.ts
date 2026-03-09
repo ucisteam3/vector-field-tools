@@ -104,6 +104,7 @@ export type ExportStatus = {
   status: "running" | "done" | "error";
   clip_path?: string;
   error?: string;
+  logs?: string[];
 };
 
 export async function getExportStatus(jobId: string): Promise<ExportStatus> {

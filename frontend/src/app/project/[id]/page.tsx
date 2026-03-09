@@ -29,7 +29,7 @@ export default function ProjectPage() {
   const [playingClip, setPlayingClip] = useState<number | null>(null);
   const [blobCache, setBlobCache] = useState<Record<number, string>>({});
   const [downloading, setDownloading] = useState<Set<number>>(new Set());
-  const [exportProgress, setExportProgress] = useState<{ progress: number; message: string } | null>(null);
+  const [exportProgress, setExportProgress] = useState<{ progress: number; message: string; logs?: string[] } | null>(null);
   const blobCacheRef = useRef<Record<number, string>>({});
   blobCacheRef.current = blobCache;
 
@@ -84,12 +84,12 @@ export default function ProjectPage() {
     const clip = project?.clips?.[index];
     if (!clip) return;
     setDownloading((s) => new Set(s).add(index));
-    setExportProgress({ progress: 0, message: "Memulai..." });
+    setExportProgress({ progress: 0, message: "Memulai...", logs: ["[0%] Memulai export..."] });
     try {
       const { job_id } = await exportClipAsync(id, index, exportSettings);
       const poll = async (): Promise<void> => {
         const status = await getExportStatus(job_id);
-        setExportProgress({ progress: status.progress, message: status.message });
+        setExportProgress({ progress: status.progress, message: status.message, logs: status.logs });
         if (status.status === "done" && status.clip_path) {
           const filename = status.clip_path.replace("clips/", "");
           const downloadName = (clip.title || `clip_${index + 1}`).replace(/[^a-zA-Z0-9 _-]/g, "").trim().slice(0, 50) + ".mp4";
@@ -269,11 +269,11 @@ export default function ProjectPage() {
         )}
       </main>
 
-      {/* Export progress modal */}
+      {/* Export progress modal with log */}
       {exportProgress && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="bg-zinc-800 border border-zinc-600 rounded-xl p-6 w-full max-w-sm mx-4 shadow-xl">
-            <div className="flex items-center gap-3 mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-zinc-800 border border-zinc-600 rounded-xl p-6 w-full max-w-md mx-4 shadow-xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center gap-3 mb-3">
               <Loader2 className="w-6 h-6 animate-spin text-cyan-400 flex-shrink-0" />
               <span className="text-white font-medium">Export klip</span>
             </div>
@@ -285,9 +285,19 @@ export default function ProjectPage() {
                 transition={{ duration: 0.25 }}
               />
             </div>
-            <p className="text-sm text-zinc-400 text-center">
+            <p className="text-sm text-zinc-400 mb-3">
               {exportProgress.progress}% — {exportProgress.message}
             </p>
+            {exportProgress.logs && exportProgress.logs.length > 0 && (
+              <div className="mt-2 pt-3 border-t border-zinc-700 overflow-y-auto max-h-32">
+                <p className="text-xs text-zinc-500 mb-1.5 font-mono">Log:</p>
+                <div className="space-y-0.5 font-mono text-xs text-zinc-400">
+                  {exportProgress.logs.map((log, i) => (
+                    <div key={i} className="truncate">{log}</div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
