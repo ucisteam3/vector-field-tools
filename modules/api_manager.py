@@ -3,9 +3,16 @@ API Manager Module
 Handles API key management for Gemini (OpenAI is configured via openai.txt)
 """
 
-import tkinter as tk
-from tkinter import messagebox
 import threading
+
+# Headless: no GUI. Stub messagebox.
+class _MessageboxStub:
+    def showwarning(self, *a, **k): pass
+    def showinfo(self, *a, **k): pass
+    def showerror(self, *a, **k): pass
+    def askyesno(self, *a, **k): return False
+messagebox = _MessageboxStub()
+END = "end"
 
 try:
     from google import genai
@@ -39,7 +46,7 @@ class APIManager:
             return True
         except Exception as e:
             print(f"  [ERROR] Gemini API config failed (Key {self.parent.current_gemini_idx + 1}): {e}")
-            if self.parent.rotate_gemini.get() and len(self.parent.user_gemini_keys) > 1:
+            if getattr(self.parent, "rotate_gemini", None) and getattr(self.parent.rotate_gemini, "get", lambda: False)() and len(self.parent.user_gemini_keys) > 1:
                 return self.rotate_gemini_api_key()
             self.parent.gemini_available = False
             return False
@@ -78,23 +85,26 @@ class APIManager:
         return result
 
     def update_api_listboxes(self):
-        self.parent.gemini_listbox.delete(0, tk.END)
+        listbox = getattr(self.parent, "gemini_listbox", None)
+        if listbox is None:
+            return
+        listbox.delete(0, END)
         for i, key in enumerate(self.parent.user_gemini_keys):
             masked_key = key[:4] + "*" * (len(key)-8) + key[-4:] if len(key) > 8 else "****"
             status = self.parent.gemini_key_statuses.get(key, "")
             display_text = f"{masked_key} {status}"
-            self.parent.gemini_listbox.insert(tk.END, display_text)
-            # Apply color based on status
-            if "[AKTIF]" in status: self.parent.gemini_listbox.itemconfig(i, fg="#00ff00")
-            elif "[LIMIT]" in status: self.parent.gemini_listbox.itemconfig(i, fg="#ffcc00")
-            elif "[ERROR]" in status: self.parent.gemini_listbox.itemconfig(i, fg="#ff4400")
-            
-        if getattr(self.parent, 'groq_listbox', None):
-            self.parent.groq_listbox.delete(0, tk.END)
-        self.parent.root.update_idletasks()
+            listbox.insert(END, display_text)
+            if "[AKTIF]" in status: listbox.itemconfig(i, fg="#00ff00")
+            elif "[LIMIT]" in status: listbox.itemconfig(i, fg="#ffcc00")
+            elif "[ERROR]" in status: listbox.itemconfig(i, fg="#ff4400")
+        if getattr(self.parent, "groq_listbox", None):
+            self.parent.groq_listbox.delete(0, END)
+        if getattr(self.parent, "root", None):
+            self.parent.root.update_idletasks()
 
     def add_gemini_key(self):
-        raw_text = self.parent.gemini_entry.get("1.0", tk.END).strip()
+        entry = getattr(self.parent, "gemini_entry", None)
+        raw_text = entry.get("1.0", END).strip() if entry else ""
         if not raw_text:
             messagebox.showwarning("Peringatan", "Masukkan minimal satu API Key Gemini!")
             return
@@ -109,8 +119,8 @@ class APIManager:
             else:
                 existed += 1
                 
-        if added > 0:
-            self.parent.gemini_entry.delete("1.0", tk.END)
+        if added > 0 and getattr(self.parent, "gemini_entry", None):
+            self.parent.gemini_entry.delete("1.0", END)
             self.parent.update_api_listboxes()
             self.parent.save_config()
             self.parent.current_gemini_idx = 0 

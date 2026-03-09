@@ -250,13 +250,10 @@ class ResultsManager:
 
     
     def download_selected_clips(self):
-        """Download clips for all checked segments in a background thread (no-op when headless)."""
-        tree = getattr(self.parent, "results_tree", None)
-        if tree is None:
-            return
+        """Download clips for all checked segments in a background thread"""
         checked_segments = []
-        for item_id in tree.get_children():
-            item = tree.item(item_id)
+        for item_id in self.parent.results_tree.get_children():
+            item = self.parent.results_tree.item(item_id)
             if item['values'][0] == "[X]":
                 start_str = item['values'][1]
                 for result in self.parent.analysis_results:
@@ -276,8 +273,8 @@ class ResultsManager:
             if not messagebox.askyesno("Konfirmasi", f"Unduh {len(checked_segments)} klip terpilih?"):
                 return
 
-        # Use threading to prevent "Not Responding"
-        self.parent.download_btn.config(state=tk.DISABLED)
+        if getattr(self.parent, "download_btn", None):
+            self.parent.download_btn.config(state="disabled")
         threading.Thread(target=self.parent._download_worker, args=(checked_segments,), daemon=True).start()
 
 
@@ -293,7 +290,7 @@ class ResultsManager:
         
         if not messagebox.askyesno("Konfirmasi", f"Unduh semua {len(self.parent.analysis_results)} klip?"):
             return
-            
-        self.parent.download_btn.config(state=tk.DISABLED)
+        if getattr(self.parent, "download_btn", None):
+            self.parent.download_btn.config(state="disabled")
         threading.Thread(target=self.parent._download_worker, args=(self.parent.analysis_results,), daemon=True).start()
 
