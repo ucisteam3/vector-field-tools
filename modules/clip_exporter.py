@@ -184,7 +184,7 @@ class ClipExporter:
 
     def download_clip(self, result, output_dir=None, clip_num=None):
         """Download a single clip using ffmpeg with high quality re-encoding"""
-        self._progress(0, "Memulai...")
+        self._progress(0, "Memulai export...")
         if not self.parent or not getattr(self.parent, "video_path", None):
             if hasattr(messagebox, "showerror"):
                 messagebox.showerror("Error", "Video belum diunduh!")
@@ -193,7 +193,7 @@ class ClipExporter:
             return False
 
         # [INSTANT START] Check for leading silence
-        self._progress(2, "Memeriksa audio...")
+        self._progress(2, "Memeriksa leading silence...")
         try:
             silence_offset = self.detect_leading_silence(self.parent.video_path, result['start'])
         except Exception as e:
@@ -381,7 +381,7 @@ class ClipExporter:
             effective_start = result['start']
             effective_duration = duration
             if export_mode == "podcast_smart" and PODCAST_SMART_AVAILABLE:
-                self._progress(5, "Menganalisis pembicara...")
+                self._progress(5, "Podcast Smart: Menganalisis active speaker...")
                 print("  [PODCAST SMART] Active speaker mode - analyzing and cropping...")
                 try:
                     tracker = PodcastSmartTracker(smoothing_factor=0.15, face_margin=1.4)
@@ -392,7 +392,7 @@ class ClipExporter:
                         sample_rate=5,
                     )
                     tracker.close()
-                    self._progress(15, "Memotong frame...")
+                    self._progress(15, "Podcast Smart: Memotong frame per-frame...")
                     cap = cv2.VideoCapture(str(self.parent.video_path))
                     fps = cap.get(cv2.CAP_PROP_FPS)
                     cap.set(cv2.CAP_PROP_POS_FRAMES, int(result['start'] * fps))
@@ -415,10 +415,11 @@ class ClipExporter:
                         frame_idx += 1
                         if total_frames and frame_idx % 10 == 0:
                             pct = 15 + int(30 * frame_idx / total_frames)
-                            self._progress(min(pct, 45), f"Memotong frame {frame_idx}/{total_frames}")
+                            self._progress(min(pct, 45), f"Podcast Smart: Crop frame {frame_idx}/{total_frames}")
                     cap.release()
                     out.release()
-                    self._progress(45, "Menggabungkan...")
+                    use_gpu_mux = getattr(self.parent, 'gpu_var', None) and self.parent.gpu_var.get()
+                    self._progress(45, f"Menggabungkan video+audio ({'NVENC' if use_gpu_mux else 'CPU'})...")
                     # Extract audio
                     temp_audio = Path(LOCAL_TEMP_DIR) / f"podcast_audio_{int(time.time())}.m4a"
                     pad_start = max(0, result['start'] - 0.2)
