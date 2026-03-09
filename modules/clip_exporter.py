@@ -919,8 +919,9 @@ class ClipExporter:
                     pad_duration = pad_end - pad_start
                 first_input = input_args[:2]
                 rest_inputs = input_args[2:] if len(input_args) > 2 else []
-                # Clip-first: -ss -t BEFORE -i so FFmpeg only decodes the clip segment (3–10x faster)
-                hwaccel = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] if use_gpu_encode else []
+                use_gpu_this = use_gpu_encode and not force_cpu
+                fc = (filter_complex_cpu if force_cpu and filter_complex_cpu else filter_complex)
+                hwaccel = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] if use_gpu_this else []
                 if effective_video_path == str(self.parent.video_path):
                     print(f"  [CLIP-FIRST] Processing only {pad_duration:.1f}s segment (no full-video decode)")
                 base_cmd = [
@@ -928,11 +929,11 @@ class ClipExporter:
                     '-ss', str(pad_start), '-t', str(pad_duration),
                     *hwaccel, *first_input,
                     *rest_inputs,
-                    '-filter_complex', filter_complex,
+                    '-filter_complex', fc,
                     '-map', '[v_out]', '-map', '[a_out]',
                     '-max_muxing_queue_size', '1024',
                 ]
-                if use_gpu_encode:
+                if use_gpu_this:
                     base_cmd.extend([
                         '-c:v', 'h264_nvenc', '-preset', 'p5', '-tune', 'hq',
                         '-rc:v', 'vbr', '-cq:v', '19', '-b:v', '6M', '-maxrate', '10M', '-bufsize', '12M',
@@ -1023,9 +1024,19 @@ class ClipExporter:
                     if clip_num is None:
                         messagebox.showinfo("Berhasil", f"Klip berhasil diekspor (GPU):\n{output_filename}")
                     return True
-                print(f"  [GPU] NVENC gagal (exit {ret_code}). Ekspor hanya mendukung GPU.")
+                print(f"  [GPU] NVENC gagal (exit {ret_code}). Mencoba fallback CPU (libx264)...")
+                if filter_complex_cpu is not None:
+                    self._progress(45, "Fallback CPU encoding...")
+                    cmd_cpu = get_ffmpeg_cmd(force_cpu=True)
+                    ret_cpu = run_ffmpeg_realtime(cmd_cpu, "CPU-x264", encode_dur, encoder_label="libx264 CPU")
+                    if ret_cpu == 0:
+                        self._progress(100, "Selesai (CPU)")
+                        print(f"  [SUCCESS] Klip {clip_num or ''} berhasil diekspor (CPU fallback)")
+                        if clip_num is None:
+                            messagebox.showinfo("Berhasil", f"Klip berhasil diekspor (CPU):\n{output_filename}")
+                        return True
                 if clip_num is None:
-                    messagebox.showerror("Kesalahan", f"NVENC gagal. Pastikan driver NVIDIA dan FFmpeg dengan NVENC terpasang.")
+                    messagebox.showerror("Kesalahan", f"NVENC gagal dan fallback CPU tidak tersedia. Cek log konsol.")
                 return False
 
             print(f"  [CPU] Mengekspor dengan libx264...")
