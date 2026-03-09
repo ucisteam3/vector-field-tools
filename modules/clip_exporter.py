@@ -173,8 +173,18 @@ class ClipExporter:
             print(f"  [SILENCE DETECT ERROR] {e}")
             return 0.0
 
+    def _progress(self, percent: int, message: str):
+        """Report progress if callback is set."""
+        cb = getattr(self.parent, "export_progress_callback", None)
+        if cb and callable(cb):
+            try:
+                cb(percent, message)
+            except Exception:
+                pass
+
     def download_clip(self, result, output_dir=None, clip_num=None):
         """Download a single clip using ffmpeg with high quality re-encoding"""
+        self._progress(0, "Memulai...")
         if not self.parent or not getattr(self.parent, "video_path", None):
             if hasattr(messagebox, "showerror"):
                 messagebox.showerror("Error", "Video belum diunduh!")
@@ -183,7 +193,7 @@ class ClipExporter:
             return False
 
         # [INSTANT START] Check for leading silence
-        # Only if audio is enabled? Assumed yes.
+        self._progress(2, "Memeriksa audio...")
         try:
             silence_offset = self.detect_leading_silence(self.parent.video_path, result['start'])
         except Exception as e:
@@ -370,6 +380,7 @@ class ClipExporter:
             effective_start = result['start']
             effective_duration = duration
             if export_mode == "podcast_smart" and PODCAST_SMART_AVAILABLE:
+                self._progress(5, "Menganalisis pembicara...")
                 print("  [PODCAST SMART] Active speaker mode - analyzing and cropping...")
                 try:
                     tracker = PodcastSmartTracker(smoothing_factor=0.15, face_margin=1.4)
@@ -380,6 +391,7 @@ class ClipExporter:
                         sample_rate=5,
                     )
                     tracker.close()
+                    self._progress(15, "Memotong frame...")
                     cap = cv2.VideoCapture(str(self.parent.video_path))
                     fps = cap.get(cv2.CAP_PROP_FPS)
                     cap.set(cv2.CAP_PROP_POS_FRAMES, int(result['start'] * fps))
@@ -387,6 +399,7 @@ class ClipExporter:
                     Path(LOCAL_TEMP_DIR).mkdir(parents=True, exist_ok=True)
                     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
                     out = cv2.VideoWriter(str(temp_video), fourcc, fps, (1080, 1920))
+                    total_frames = len(crop_boxes)
                     frame_idx = 0
                     while frame_idx < len(crop_boxes):
                         ret, frame = cap.read()
@@ -399,8 +412,12 @@ class ClipExporter:
                             scaled = cv2.resize(cropped, (1080, 1920))
                             out.write(scaled)
                         frame_idx += 1
+                        if total_frames and frame_idx % 10 == 0:
+                            pct = 15 + int(30 * frame_idx / total_frames)
+                            self._progress(min(pct, 45), f"Memotong frame {frame_idx}/{total_frames}")
                     cap.release()
                     out.release()
+                    self._progress(45, "Menggabungkan...")
                     # Extract audio
                     temp_audio = Path(LOCAL_TEMP_DIR) / f"podcast_audio_{int(time.time())}.m4a"
                     pad_start = max(0, result['start'] - 0.2)
@@ -437,6 +454,7 @@ class ClipExporter:
             if export_mode == "podcast_smart" and effective_video_path != str(self.parent.video_path):
                 fc_str = "[0:v]setsar=1[v_mixed];"
             elif export_mode == "face_tracking" and MEDIAPIPE_AVAILABLE:
+                self._progress(10, "Menganalisis wajah...")
                 print("  [FACE TRACKING] Analyzing clip segment for face positions...")
                 try:
                     # Initialize face tracker
@@ -907,9 +925,12 @@ class ClipExporter:
                 return base_cmd
 
             # Execution logic with real-time feedback
-            def run_ffmpeg_realtime(cmd, description):
+            def run_ffmpeg_realtime(cmd, description, encode_duration=None):
+                self._progress(50, "Mengode video...")
                 print(f"  [{description}] Executing FFmpeg...")
                 import sys # Import sys for platform check
+                import re
+                time_pat = re.compile(r'time=(\d+):(\d+):(\d+)\.(\d+)')
                 try:
                     # Use Popen to capture output in real-time
                     if sys.platform == 'win32':

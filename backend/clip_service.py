@@ -52,11 +52,17 @@ def _apply_settings(ctx, settings: dict):
         ctx.subtitle_enabled_var.set(bool(settings["subtitle_enabled"]))
 
 
-def export_clip(project_id: str, clip_index: int, settings: Optional[dict] = None) -> str | None:
+def export_clip(
+    project_id: str,
+    clip_index: int,
+    settings: Optional[dict] = None,
+    progress_callback=None,
+) -> str | None:
     """
     Export a single clip for the project. Returns the clip filename or None.
     Uses existing ClipExporter via WebAppContext.
     settings: optional dict to override export options (subtitle, watermark, BGM, etc.)
+    progress_callback: optional (percent: int, message: str) -> None for progress updates.
     """
     import sys
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -124,6 +130,7 @@ def export_clip(project_id: str, clip_index: int, settings: Optional[dict] = Non
     ctx.gpu_var = MockTkVar()
     ctx.gpu_var.get = lambda: True
     ctx.channel_name = meta.get("channel_name", "Unknown")
+    ctx.export_progress_callback = progress_callback
 
     try:
         from modules.clip_exporter import ClipExporter

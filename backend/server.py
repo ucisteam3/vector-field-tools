@@ -474,6 +474,52 @@ def export_clip_with_settings(req: ExportClipRequest):
     raise HTTPException(status_code=500, detail=detail)
 
 
+def _run_export_job(job_id: str, project_id: str, clip_id: int, settings: Optional[dict]):
+    """Background worker for async export with progress."""
+    def on_progress(percent: int, message: str):
+        with _export_lock:
+            if job_id in _export_jobs:
+                _export_jobs[job_id]["progress"] = percent
+                _export_jobs[job_id]["message"] = message
+
+    with _export_lock:
+        _export_jobs[job_id] = {"progress": 0, "message": "Memulai...", "status": "running", "clip_path": None, "error": None}
+
+    try:
+        fn = export_clip(project_id, clip_id, settings, progress_callback=on_progress)
+        if fn:
+            with _export_lock:
+                _export_jobs[job_id].update(progress=100, message="Selesai", status="done", clip_path=f"clips/{fn}")
+        else:
+            with _export_lock:
+                _export_jobs[job_id].update(status="error", error="Export gagal", progress=0)
+    except Exception as e:
+        with _export_lock:
+            _export_jobs[job_id].update(status="error", error=str(e)[:200], progress=0)
+        import traceback
+        traceback.print_exc()
+
+
+@app.post("/export_clip_async")
+def export_clip_async(req: ExportClipRequest):
+    """Start export in background. Returns job_id. Poll /export_clip_status?job_id=xxx for progress."""
+    job_id = str(uuid.uuid4())[:8]
+    t = threading.Thread(target=_run_export_job, args=(job_id, req.project_id, req.clip_id, req.settings))
+    t.daemon = True
+    t.start()
+    return {"job_id": job_id}
+
+
+@app.get("/export_clip_status")
+def export_clip_status(job_id: str):
+    """Get export progress. Returns {progress, message, status, clip_path?, error?}."""
+    with _export_lock:
+        job = _export_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
 # Upload directories
 BGM_UPLOAD_DIR = PROJECT_ROOT / "temp" / "bgm_uploads"
 WATERMARK_UPLOAD_DIR = PROJECT_ROOT / "temp" / "watermark_uploads"
