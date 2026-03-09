@@ -531,8 +531,7 @@ class ClipExporter:
                 else:
                     fc_str = "[0:v]setsar=1[v_mixed];"
             elif export_mode == "face_tracking":
-                # Face tracking disabled: MediaPipe model loading and frame scan unstable/slow. Use center crop.
-                print("  [FACE TRACKING] Using center crop (tracking disabled)")
+                print("  [FACE TRACKING] Fallback to safe center crop")
                 fc_str = "[0:v]setsar=1,crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920[v_mixed];"
             else:
                 self._progress(25, "Mempersiapkan filter (blur/overlay)...")
