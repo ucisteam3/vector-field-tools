@@ -218,6 +218,10 @@ def export_clip(
     )
     input_args.extend(extra)
 
+    # STEP 5 — Landscape mode safety validation
+    if mode == "landscape_fit" and "boxblur" not in (fc_video or ""):
+        print("[WARNING] Landscape mode not applied correctly (missing 'boxblur' in filter graph)")
+
     # Full filter: video only for CPU (audio -map 0:a), or video+audio for GPU
     if use_video_only_minimal:
         filter_complex = fc_video
@@ -306,13 +310,28 @@ def export_clip(
     # GPU try
     if use_gpu_encode:
         progress(50, "Mengode video (NVENC)...")
-        ret = run_ffmpeg(make_cmd(), progress_callback=progress, encode_duration=encode_dur)
+        _cmd = make_cmd()
+        # STEP 4 — Explicit debug output before executing FFmpeg
+        print("FFMPEG FILTER GRAPH:")
+        try:
+            _i = _cmd.index("-filter_complex")
+            print(_cmd[_i + 1])
+        except Exception:
+            print("(none)")
+        ret = run_ffmpeg(_cmd, progress_callback=progress, encode_duration=encode_dur)
         if ret == 0:
             progress(100, "Selesai (NVENC)")
             msg_ok("Berhasil", f"Klip berhasil diekspor (GPU):\n{out_name}")
             return True
         progress(45, "Fallback CPU encoding...")
-        ret = run_ffmpeg(make_cmd(force_cpu=True), progress_callback=progress, encode_duration=encode_dur)
+        _cmd = make_cmd(force_cpu=True)
+        print("FFMPEG FILTER GRAPH:")
+        try:
+            _i = _cmd.index("-filter_complex")
+            print(_cmd[_i + 1])
+        except Exception:
+            print("(none)")
+        ret = run_ffmpeg(_cmd, progress_callback=progress, encode_duration=encode_dur)
         if ret == 0:
             progress(100, "Selesai (CPU)")
             msg_ok("Berhasil", f"Klip berhasil diekspor (CPU):\n{out_name}")
@@ -322,7 +341,14 @@ def export_clip(
 
     # CPU
     progress(50, "Mengode video...")
-    ret = run_ffmpeg(make_cmd(), progress_callback=progress, encode_duration=encode_dur)
+    _cmd = make_cmd()
+    print("FFMPEG FILTER GRAPH:")
+    try:
+        _i = _cmd.index("-filter_complex")
+        print(_cmd[_i + 1])
+    except Exception:
+        print("(none)")
+    ret = run_ffmpeg(_cmd, progress_callback=progress, encode_duration=encode_dur)
     if ret == 0:
         progress(100, "Selesai")
         msg_ok("Berhasil", f"Klip berhasil diekspor:\n{out_name}")
@@ -330,7 +356,14 @@ def export_clip(
 
     # Minimal fallback
     progress(50, "Mencoba export minimal...")
-    ret = run_ffmpeg(make_cmd(fc_override=MINIMAL_VIDEO_FC), progress_callback=progress, encode_duration=encode_dur)
+    _cmd = make_cmd(fc_override=MINIMAL_VIDEO_FC)
+    print("FFMPEG FILTER GRAPH:")
+    try:
+        _i = _cmd.index("-filter_complex")
+        print(_cmd[_i + 1])
+    except Exception:
+        print("(none)")
+    ret = run_ffmpeg(_cmd, progress_callback=progress, encode_duration=encode_dur)
     if ret == 0:
         progress(100, "Selesai (minimal)")
         msg_ok("Berhasil", f"Klip berhasil diekspor (minimal):\n{out_name}")
