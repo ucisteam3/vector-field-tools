@@ -430,17 +430,11 @@ class ClipExporter:
             effective_start = result['start']
             effective_duration = duration
             if export_mode == "podcast_smart" and PODCAST_SMART_AVAILABLE:
-                self._progress(5, "Podcast Smart: Menganalisis active speaker...")
-                print("  [PODCAST SMART] Active speaker mode - analyzing and cropping...")
-                try:
-                    tracker = PodcastSmartTracker(smoothing_factor=0.15, face_margin=1.4)
-                    crop_boxes = tracker.analyze_video(
-                        str(self.parent.video_path),
-                        start_time=result['start'],
-                        duration=duration,
-                        sample_rate=5,
-                    )
-                    tracker.close()
+                # Face/tracker-based crop disabled: unstable and slow. Use center crop via FFmpeg.
+                crop_boxes = None
+                if crop_boxes is not None:
+                    self._progress(5, "Podcast Smart: Menganalisis active speaker...")
+                    print("  [PODCAST SMART] Active speaker mode - analyzing and cropping...")
                     pad_start = max(0, result['start'] - 0.2)
                     pad_end = result['start'] + duration + 0.2
                     pad_dur = pad_end - pad_start
@@ -521,8 +515,10 @@ class ClipExporter:
                         temp_audio.unlink(missing_ok=True)
                     except Exception:
                         pass
-                except Exception as e:
-                    print(f"  [PODCAST SMART ERROR] {e} - falling back to center crop")
+                else:
+                    print("  [PODCAST SMART] Using center crop (tracking disabled)")
+                # except Exception as e:
+                #     print(f"  [PODCAST SMART ERROR] {e} - falling back to center crop")
 
             # Use effective video path for inputs (podcast_smart replaces with pre-cropped temp)
             if input_args[0] == '-i':
@@ -538,33 +534,10 @@ class ClipExporter:
                     fc_str = "[0:v]scale_cuda=1080:1920[v_mixed];"
                 else:
                     fc_str = "[0:v]setsar=1[v_mixed];"
-            elif export_mode == "face_tracking" and MEDIAPIPE_AVAILABLE:
-                self._progress(10, "Face Tracking: Menganalisis wajah...")
-                print("  [FACE TRACKING] Analyzing clip segment for face positions...")
-                try:
-                    # Initialize face tracker
-                    smoothing = self.parent.custom_settings.get("face_tracking_smoothing", 30)
-                    tracker = FaceTracker(smoothing_window=smoothing)
-                    
-                    # Get clip timing
-                    start_time = result['start']
-                    duration = result['end'] - result['start']
-                    
-                    print(f"  [FACE TRACKING] Clip: {start_time:.1f}s - {result['end']:.1f}s (duration: {duration:.1f}s)")
-                    
-                    # Analyze ONLY the clip segment (not full video!)
-                    crop_positions = tracker.analyze_video_for_faces(
-                        str(self.parent.video_path), 
-                        sample_rate=30,
-                        start_time=start_time,
-                        duration=duration
-                    )
-                    tracker.close()
-                    
-                    # Get crop box for first frame (we'll use average position for simplicity)
-                    # For dynamic crop, we'd need to generate per-frame crop which is complex with FFmpeg
-                    # Instead, we'll use the median position across all frames for a stable crop
-                    if crop_positions:
+            elif export_mode == "face_tracking":
+                # Face tracking disabled: MediaPipe model loading and frame scan unstable/slow. Use center crop.
+                crop_positions = None
+                if crop_positions:
                         median_x = int(np.median(crop_positions))
                         
                         # Get video dimensions
