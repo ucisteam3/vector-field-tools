@@ -218,14 +218,15 @@ class PodcastSmartTracker:
             box = center_x_to_box(cx)
             return [box] * total_frames
 
-        # Step 1–4: 1 FPS sampling, detect faces, speaker = largest face, build timeline
-        sample_interval = max(1, int(fps))
-        n_seconds = max(1, int(dur))
+        # ~sample_rate FPS sampling: sample_interval = fps / sample_rate (e.g. 5 FPS when sample_rate=5)
+        sample_interval = max(1, int(fps / sample_rate))
+        n_samples = max(1, (total_frames + sample_interval - 1) // sample_interval)
         timeline: List[float] = []
         last_center_x = float(w // 2)
+        prev_frame = None
 
-        for sec in range(n_seconds):
-            frame_pos = start_frame + sec * sample_interval
+        for i in range(n_samples):
+            frame_pos = min(start_frame + i * sample_interval, start_frame + total_frames - 1)
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
             ret, frame = cap.read()
             if not ret:
@@ -235,6 +236,8 @@ class PodcastSmartTracker:
             scale_x = w / 640
             scale_y = h / 360
             faces = self.detect_faces(small)
+            # Motion uses small frame and small bbox
+            motions = self._compute_face_motion(small, prev_frame, faces) if prev_frame is not None else []
             for f in faces:
                 f["center"] = (f["center"][0] * scale_x, f["center"][1] * scale_y)
                 f["bbox"] = (
@@ -245,22 +248,28 @@ class PodcastSmartTracker:
                 )
                 f["size"] = f["bbox"][2] * f["bbox"][3]
             if faces:
-                faces.sort(key=lambda f: f["size"], reverse=True)
-                speaker = faces[0]
+                # Choose active speaker by motion; fallback to largest face
+                if motions and len(motions) == len(faces):
+                    idx = int(np.argmax(motions))
+                    speaker = faces[idx]
+                else:
+                    faces.sort(key=lambda f: f["size"], reverse=True)
+                    speaker = faces[0]
                 center_x = speaker["center"][0]
                 last_center_x = center_x
             else:
                 center_x = last_center_x
             timeline.append(center_x)
+            prev_frame = small.copy()
 
         cap.release()
 
-        # Step 5: Interpolate per-second positions to per-frame (repeat each position frames_per_sec times)
+        # Step 5: Interpolate sampled positions to per-frame (repeat each value sample_interval times)
         positions: List[float] = []
-        for sec in range(n_seconds):
-            idx = min(sec, len(timeline) - 1)
+        for i in range(n_samples):
+            idx = min(i, len(timeline) - 1)
             val = timeline[idx]
-            for _ in range(frames_per_sec):
+            for _ in range(sample_interval):
                 positions.append(val)
         positions = positions[:total_frames]
         if len(positions) < total_frames:
@@ -278,7 +287,7 @@ class PodcastSmartTracker:
 
         # Step 7: Return crop boxes (x, y, w, h) per frame
         crop_boxes = [center_x_to_box(s) for s in smoothed]
-        print(f"  [PODCAST_SMART] 1 FPS analysis done: {n_seconds} samples -> {len(crop_boxes)} frames")
+        print(f"  [PODCAST_SMART] ~{sample_rate} FPS analysis done: {n_samples} samples -> {len(crop_boxes)} frames")
         return crop_boxes
 
     def close(self):
