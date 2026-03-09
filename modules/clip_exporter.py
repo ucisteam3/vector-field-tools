@@ -616,28 +616,27 @@ class ClipExporter:
                         f"[bg_v][fg_v]overlay=(W-w)/2:(H-h)/2[v_mixed];"
                     )
             
-            # --- DYNAMIC ZOOM (Ken Burns style) ---
+            # --- DYNAMIC ZOOM (Ken Burns style) - applied BEFORE subtitles/watermark (d=2 = stable timing) ---
             zoom_enabled = self.parent.custom_settings.get("dynamic_zoom_enabled", False)
             if zoom_enabled:
                 zoom_strength = float(self.parent.custom_settings.get("dynamic_zoom_strength", 1.55))
                 zoom_speed = float(self.parent.custom_settings.get("dynamic_zoom_speed", 0.0032))
                 zoom_strength = max(1.1, min(2.0, zoom_strength))
-                zoom_speed = max(0.0015, min(0.008, zoom_speed))  # lebih cepat biar terasa
+                zoom_speed = max(0.0015, min(0.008, zoom_speed))
                 print(f"  [DYNAMIC ZOOM] strength={zoom_strength}, speed={zoom_speed}")
-                fc_str += f"[v_mixed]zoompan=z='min(zoom+{zoom_speed:.4f},{zoom_strength:.2f})':d=2:s=1080x1920[v_mixed];"
-            
-            # --- VIDEO FLIP LOGIC (Anti-Copyright) ---
-            # Apply flip BEFORE text overlays so text remains readable
-            flip_enabled = self.parent.custom_settings.get("video_flip_enabled", False)
-            if flip_enabled:
-                print(f"  [FLIP] Horizontal flip enabled (anti-copyright)")
-                fc_str += f"[v_mixed]hflip[v_flipped];"
-                last_v_label = "[v_flipped]"
+                fc_str += f"[v_mixed]zoompan=z='min(zoom+{zoom_speed:.4f},{zoom_strength:.2f})':d=2:s=1080x1920[v_zoom];"
+                last_v_label = "[v_zoom]"
             else:
                 last_v_label = "[v_mixed]"
             
-            # --- SUBTITLE OVERLAY ---
-            # Applied AFTER flip so subtitle text remains readable
+            # --- VIDEO FLIP (before subtitles/watermark) ---
+            flip_enabled = self.parent.custom_settings.get("video_flip_enabled", False)
+            if flip_enabled:
+                print(f"  [FLIP] Horizontal flip enabled (anti-copyright)")
+                fc_str += f"{last_v_label}hflip[v_flipped];"
+                last_v_label = "[v_flipped]"
+            
+            # --- SUBTITLE OVERLAY (after zoom, before watermark) ---
             if ass_path:
                 safe_ass_path = str(ass_path).replace("\\", "/").replace(":", "\\:")
                 # [FIX] Point FFmpeg to local fonts directory
@@ -936,9 +935,7 @@ class ClipExporter:
                 except Exception as e:
                     print(f"  [SOURCE CREDIT ERROR] {e}")
 
-            # setpts at start: reset PTS after -ss trim
-            fc_str = "[0:v]setpts=PTS-STARTPTS[v_pts];" + fc_str.replace("[0:v]", "[v_pts]")
-            # Reset PTS at end so duration matches (no fps filter = no duplicated frames)
+            # Single setpts at end only (avoids duplicate timestamp reset, stabilizes duration)
             fc_str += f"{last_v_label}setpts=PTS-STARTPTS[v_out];"
             
             # --- AUDIO PITCH (optional) ---
