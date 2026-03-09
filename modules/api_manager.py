@@ -119,8 +119,8 @@ class APIManager:
             else:
                 existed += 1
                 
-        if added > 0 and getattr(self.parent, "gemini_entry", None):
-            self.parent.gemini_entry.delete("1.0", END)
+        if added > 0:
+            self.parent.gemini_entry.delete("1.0", tk.END)
             self.parent.update_api_listboxes()
             self.parent.save_config()
             self.parent.current_gemini_idx = 0 
@@ -141,9 +141,11 @@ class APIManager:
         def task():
             total = len(self.parent.user_gemini_keys)
             for i, key in enumerate(self.parent.user_gemini_keys):
-                self.parent.progress_var.set(f"Testing Gemini Key {i+1}/{total}...")
+                if getattr(self.parent, "progress_var", None):
+                    self.parent.progress_var.set(f"Testing Gemini Key {i+1}/{total}...")
                 self.parent.gemini_key_statuses[key] = "[TESTING...]"
-                self.parent.root.after(0, self.parent.update_api_listboxes)
+                if getattr(self.parent, "root", None):
+                    self.parent.root.after(0, self.parent.update_api_listboxes)
                 
                 try:
                     test_client = genai.Client(api_key=key)
@@ -161,21 +163,26 @@ class APIManager:
                         print(f"Test Key Error ({key[:5]}...): {e}")
                         self.parent.gemini_key_statuses[key] = "[ERROR]"
                 
-                self.parent.root.after(0, self.parent.update_api_listboxes)
-
-            self.parent.progress_var.set(f"Selesai mengetes {total} API Key Gemini.")
-            self.parent.root.after(0, lambda: messagebox.showinfo("Selesai", f"Selesai mengetes {total} API Key Gemini.\nCek tabel untuk status masing-masing key."))
+                if getattr(self.parent, "root", None):
+                    self.parent.root.after(0, self.parent.update_api_listboxes)
+            if getattr(self.parent, "progress_var", None):
+                self.parent.progress_var.set(f"Selesai mengetes {total} API Key Gemini.")
+            if getattr(self.parent, "root", None):
+                self.parent.root.after(0, lambda: messagebox.showinfo("Selesai", f"Selesai mengetes {total} API Key Gemini.\nCek tabel untuk status masing-masing key."))
             
         import threading
         threading.Thread(target=task, daemon=True).start()
 
     def remove_gemini_key(self):
-        selected = self.parent.gemini_listbox.curselection()
+        listbox = getattr(self.parent, "gemini_listbox", None)
+        if listbox is None:
+            return
+        selected = listbox.curselection()
         if selected:
             idx = selected[0]
             self.parent.user_gemini_keys.pop(idx)
-            self.parent.current_gemini_idx = 0 # Reset to safety
-            self.parent.update_api_listboxes()
+            self.parent.current_gemini_idx = 0
+            self.update_api_listboxes()
             self.parent.save_config()
             self.initialize_gemini_api()
         else:

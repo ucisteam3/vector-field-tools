@@ -1,12 +1,17 @@
 """
 Utility Functions Module
-Miscellaneous utility functions
+Miscellaneous utility functions. Web/headless: no GUI dialogs.
 """
 
 import os
 import time
-import tkinter as tk
-from tkinter import messagebox, filedialog
+
+# Headless stubs (no messagebox/filedialog).
+def _noop(*a, **k): pass
+def _noop_filedialog(*a, **k): return None
+messagebox = type("MB", (), {"showwarning": _noop, "showinfo": _noop, "showerror": _noop})()
+filedialog = type("FD", (), {"askdirectory": lambda *a, **k: None})()
+END = "end"
 
 
 class UtilityFunctions:
@@ -17,14 +22,13 @@ class UtilityFunctions:
         self.parent = parent
     
     def export_ai_package(self):
-        """Export current transcript and AI prompt to a folder."""
+        """Export current transcript and AI prompt to a folder. No-op when headless (no dialog)."""
         if not self.parent.analysis_results and not self.parent.video_path:
-             messagebox.showwarning("Export Failed", "Lakukan analisis video terlebih dahulu!")
-             return
-             
+            messagebox.showwarning("Export Failed", "Lakukan analisis video terlebih dahulu!")
+            return
+        manual_box = getattr(self.parent, "manual_transcript_text", None)
+        manual_text = manual_box.get("1.0", END).strip() if manual_box else ""
         try:
-             # Try to find a transcript (from box or from our analysis)
-             manual_text = self.parent.manual_transcript_text.get("1.0", tk.END).strip()
              if not manual_text:
                  messagebox.showwarning("Export Failed", "Transkrip kosong. Pastikan transkrip sudah dimuat/dihasilkan.")
                  return

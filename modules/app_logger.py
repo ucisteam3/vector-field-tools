@@ -1,39 +1,34 @@
 """
 App Logger Module
 Buffers log output and provides export to file for analysis log.
+Web/headless: no GUI; export is no-op or can be done via API.
 """
 
-import tkinter as tk
-from tkinter import filedialog, messagebox
 import os
 from datetime import datetime
 
+END = "end"
+
 
 def export_log_from_widget(text_widget, parent_window=None):
-    """Export current log content from ScrolledText widget to a file."""
-    if not text_widget or not text_widget.winfo_exists():
-        messagebox.showwarning("Export Log", "Log tidak tersedia.")
+    """Export current log content from ScrolledText widget to a file. No-op when headless (no widget)."""
+    if not text_widget:
         return
-    content = text_widget.get("1.0", tk.END).strip()
+    try:
+        exists = getattr(text_widget, "winfo_exists", lambda: False)()
+    except Exception:
+        exists = False
+    if not exists:
+        return
+    try:
+        content = text_widget.get("1.0", END).strip()
+    except Exception:
+        return
     if not content:
-        messagebox.showinfo("Export Log", "Log kosong. Jalankan analisis terlebih dahulu.")
         return
+    # Headless: no filedialog. Caller can write to a path from API.
     default_name = f"heatmap_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-    path = filedialog.asksaveasfilename(
-        defaultextension=".txt",
-        filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-        initialfile=default_name,
-        title="Simpan Log Analisis"
-    )
-    if path:
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
-            messagebox.showinfo("Berhasil", f"Log disimpan ke:\n{path}")
-            if os.path.exists(path) and parent_window:
-                try:
-                    os.startfile(os.path.dirname(path))
-                except Exception:
-                    pass
-        except Exception as e:
-            messagebox.showerror("Error", f"Gagal menyimpan log: {e}")
+    # Optional: write to cwd if you want headless export
+    # path = os.path.join(os.getcwd(), default_name)
+    # with open(path, "w", encoding="utf-8") as f: f.write(content)
+    return
