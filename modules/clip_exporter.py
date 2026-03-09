@@ -617,41 +617,6 @@ class ClipExporter:
                 output_filename=output_filename,
                 safe_messagebox=_safe_messagebox,
             )
-
-            # ---- legacy inlined filter/FFmpeg block removed; kept below as dead code for one more removal ----
-            if False and export_mode == "podcast_smart" and effective_video_path != str(self.parent.video_path):
-                base_supports_gpu = True
-                if use_pure_gpu_possible and not has_heavy_filters:
-                    fc_str = "[0:v]scale_cuda=1080:1920[v_mixed];"
-                else:
-                    fc_str = "[0:v]setsar=1[v_mixed];"
-                print("  [MODE] Podcast Smart — video sudah 9:16 dari preprocessing")
-            # --- Mode 2: Portrait / Face Tracking — center crop 9:16 (safer crop expr) ---
-            elif export_mode == "face_tracking":
-                fc_str = "[0:v]setsar=1,crop=ih*9/16:ih:(iw-(ih*9/16))/2:0,scale=1080:1920[v_mixed];"
-                print("  [MODE] 9:16 Portrait — center crop 1080x1920")
-            # --- Mode 3: Landscape Fit + Podcast fallback ---
-            else:
-                self._progress(25, "Mempersiapkan filter...")
-                if export_mode == "podcast_smart" and effective_video_path == str(self.parent.video_path):
-                    print("  [MODE] Podcast Smart fallback — 9:16 center crop")
-                    fc_str = "[0:v]setsar=1,crop=ih*9/16:ih:(iw-(ih*9/16))/2:0,scale=1080:1920[v_mixed];"
-                elif export_mode == "landscape_fit":
-                    # Letterboxed 9:16: scale to fit then pad
-                    fc_str = "[0:v]setsar=1,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black[v_mixed];"
-                    print("  [MODE] Landscape Fit — letterbox/pillarbox 9:16 (1080x1920)")
-                else:
-                    # Legacy: blur background + overlay
-                    fc_str = (
-                        f"[0:v]setsar=1,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:10[bg_v];"
-                        f"[0:v]setsar=1,scale=1080:-1[fg_v];"
-                        f"[bg_v][fg_v]overlay=(W-w)/2:(H-h)/2[v_mixed];"
-                    )
-                    print("  [MODE] Legacy blur background — 9:16")
-            
-            # Save base filter (video only up to [v_mixed]) for "Filter not found" retry
-            base_fc_str = fc_str
-            base_last_v_label = "[v_mixed]"
             
             # --- Check FFmpeg filter availability (avoid "Filter not found" on minimal builds) ---
             _has = _ffmpeg_has_filters("subtitles", "drawtext", "zoompan", "hflip")
