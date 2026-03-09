@@ -6,6 +6,13 @@ taskkill /F /IM node.exe 2>nul
 if %errorlevel% equ 0 (echo Node berhasil dimatikan.) else (echo Tidak ada proses Node.)
 echo.
 
+echo Mematikan backend lama di port 8001 (jika ada)...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8001" ^| findstr "LISTENING"') do (
+  echo Kill PID %%a (port 8001)...
+  taskkill /F /PID %%a >nul 2>nul
+)
+echo.
+
 echo Menjalankan Backend (API)...
 start "Backend - API" cmd /k "cd /d "%~dp0" && python server.py"
 
