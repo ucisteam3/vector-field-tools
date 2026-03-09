@@ -50,15 +50,15 @@ class AISegmentAnalyzer:
     WINDOW_OVERLAP_SEC = 2
     TOP_CANDIDATES_FOR_OPENAI = 600  # 120–250 candidate moments per hour
     TARGET_CLIPS_PER_HOUR = 35
-    CLIP_MIN_DURATION_SEC = 10
+    CLIP_MIN_DURATION_SEC = 20
     CLIP_MAX_DURATION_SEC = 60
 
-    # [OPUS-STYLE] Multi-clip pipeline: sliding window for 10-30 clips per video
+    # [OPUS-STYLE] Multi-clip pipeline: max 15 quality clips, longer to avoid cutting speech
     OPUS_WINDOW_SIZE = 30
     OPUS_STEP_SIZE = 6
-    OPUS_CLIP_MIN = 10
+    OPUS_CLIP_MIN = 20
     OPUS_CLIP_MAX = 60
-    OPUS_TOP_CLIPS = 50
+    OPUS_TOP_CLIPS = 15
     OPUS_OVERLAP_THRESHOLD = 0.95
     HOOK_PRE_ROLL_SEC = 2  # Start clip 2s before hook moment
     HOOK_POST_ROLL_MIN = 30
@@ -66,7 +66,7 @@ class AISegmentAnalyzer:
     # Natural end behavior (speech boundaries)
     NATURAL_PAUSE_END_SEC = 0.6
     TOPIC_SHIFT_PAUSE_SEC = 1.0
-    ABS_MIN_CLIP_SEC = 8
+    ABS_MIN_CLIP_SEC = 18
     ABS_MAX_CLIP_SEC = 60
 
     # [HOOK DETECTION] Phrases that mark viral statement moments (strong opening in first 3s)
@@ -850,18 +850,18 @@ class AISegmentAnalyzer:
 
     def _adaptive_duration_bounds_from_scores(self, hook_score: float, argument_score: float, info_density: float) -> tuple[float, float]:
         """
-        Variable duration based on signals (rough heuristic):
-        - Strong hook -> 8-15s
-        - Argument/discussion -> 15-40s
+        Variable duration: longer minimums to avoid cutting important speech.
+        - Strong hook -> 20-35s
+        - Argument/discussion -> 25-45s
         - High info density -> 40-60s
         """
         if hook_score >= 60:
-            return 8.0, 15.0
+            return 20.0, 35.0
         if info_density >= 60:
             return 40.0, 60.0
         if argument_score >= 55:
-            return 25.0, 40.0
-        return 15.0, 25.0
+            return 25.0, 45.0
+        return 22.0, 40.0
 
     def _natural_clip_window(self, *, base_start: float, base_end: float, hook_time: float | None, cues, min_dur: float, max_dur: float) -> tuple[float, float, float | None]:
         """
@@ -938,8 +938,8 @@ class AISegmentAnalyzer:
         """
         start_time = max(0.0, hook_start - self.HOOK_PRE_ROLL_SEC)
 
-        # STEP 3 — Random target duration (avoid uniform clips)
-        target_duration = random.randint(12, 45)
+        # Random target duration: prefer 22–50s so clips are long enough to complete thoughts
+        target_duration = random.randint(22, 50)
         clip_end = start_time + float(target_duration)
 
         # STEP 4 — Align with sentence end (never cut speech)
@@ -953,11 +953,11 @@ class AISegmentAnalyzer:
         except Exception:
             pass
 
-        # STEP 5 — Safety limits
+        # Safety limits: min 18s (avoid cut-off speech), max 60s
         clip_end = min(float(clip_end), float(duration_sec))
         clip_duration = float(clip_end) - float(start_time)
-        if clip_duration < 10.0:
-            clip_end = min(float(duration_sec), float(start_time) + 10.0)
+        if clip_duration < 18.0:
+            clip_end = min(float(duration_sec), float(start_time) + 18.0)
         if (float(clip_end) - float(start_time)) > 60.0:
             clip_end = min(float(duration_sec), float(start_time) + 60.0)
 
@@ -1466,8 +1466,8 @@ class AISegmentAnalyzer:
                 elif e - s < self.CLIP_MIN_DURATION_SEC:
                     seg["end"] = s + self.CLIP_MIN_DURATION_SEC
 
-            target_clips = max(15, min(30, int(duration_sec / 3600 * self.TARGET_CLIPS_PER_HOUR)))
-            openai_segments = openai_segments[:max(target_clips, 40)]
+            target_clips = 15
+            openai_segments = openai_segments[:target_clips]
             print(f"  [MOMENT] Candidates: {len(deduped)} -> final pool: {len(openai_segments)}")
 
         # [FALLBACK] No sub_transcriptions: use GPT
@@ -1487,7 +1487,7 @@ class AISegmentAnalyzer:
             return None
 
         openai_segments.sort(key=lambda x: x.get("viral_score", 0), reverse=True)
-        target_clips = max(15, min(30, int(duration_sec / 3600 * self.TARGET_CLIPS_PER_HOUR)))
+        target_clips = 15  # Max 15 clips, quality over quantity
         openai_segments = openai_segments[:target_clips]
 
         print(f"  [OPENAI] Processing {len(openai_segments)} clips for titles and hooks")
@@ -1652,7 +1652,7 @@ class AISegmentAnalyzer:
                         for k, v in viral_segments.items()
                     ]
                     refined_list, stats = refine_all_segments(segments_list, subtitle_path,
-                                                             min_duration=8.0,
+                                                             min_duration=18.0,
                                                              max_duration=60.0)
                     by_id = {s['_id']: s for s in segments_list}
                     # Sort by final_score descending (highest first)

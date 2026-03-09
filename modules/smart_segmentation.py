@@ -590,16 +590,17 @@ def find_best_boundary_near(target_time: float, cues: List[SubtitleCue],
 
 def _adaptive_duration_bounds(duration_sec: float) -> Tuple[float, float]:
     """
-    Variable clip duration: hooks 8-15s, short 15-25s, discussion 25-40s, deep 40-60s.
+    Variable clip duration: longer minimums to avoid cutting speech.
+    Hooks 18-35s, short 22-40s, discussion 28-50s, deep 35-60s.
     Returns (min_duration, max_duration) for this segment.
     """
-    if duration_sec <= 15:
-        return 8.0, 15.0   # Hooks
-    if duration_sec <= 25:
-        return 15.0, 25.0  # Short explanation
-    if duration_sec <= 40:
-        return 25.0, 40.0  # Discussion
-    return 25.0, min(60.0, MAX_CLIP_DURATION_SEC)  # Deep commentary, cap 60s
+    if duration_sec <= 20:
+        return 18.0, 35.0   # Hooks
+    if duration_sec <= 35:
+        return 22.0, 40.0   # Short explanation
+    if duration_sec <= 50:
+        return 28.0, 50.0   # Discussion
+    return 35.0, min(60.0, MAX_CLIP_DURATION_SEC)  # Deep commentary, cap 60s
 
 
 def refine_segment_boundaries(segment: Dict, cues: List[SubtitleCue],
