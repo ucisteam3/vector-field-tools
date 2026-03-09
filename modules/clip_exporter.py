@@ -105,9 +105,23 @@ def _ffmpeg_has_filters(*names: str) -> dict:
     return {n: bool(re.search(r"\b" + re.escape(n.lower()) + r"\b", out)) for n in names}
 
 
+def finalize_filter_graph(fc: str) -> str:
+    """Never end a filter graph with a semicolon. Use before running FFmpeg."""
+    return (fc.strip().rstrip(";") if fc else fc) or ""
+
+
 def finalize_filter(fc):
-    """Remove trailing semicolon so FFmpeg does not interpret an empty filter after the last label."""
-    return fc.rstrip(";").strip() if fc else fc
+    """Alias for finalize_filter_graph for backward compatibility."""
+    return finalize_filter_graph(fc)
+
+
+def append_filter(fc: str, chain: str) -> str:
+    """Safe builder: prevents accidental double semicolons between filter chains."""
+    if not fc or not fc.strip():
+        return chain.strip() if chain else ""
+    if not chain or not chain.strip():
+        return fc.strip()
+    return fc.strip().rstrip(";") + ";" + chain.strip().lstrip(";")
 
 
 def _safe_messagebox(kind, title, message):
@@ -1006,8 +1020,8 @@ class ClipExporter:
                 rest_inputs = input_args[2:] if len(input_args) > 2 else []
                 use_gpu_this = use_gpu_encode and not force_cpu
                 fc = (filter_complex_cpu if force_cpu and filter_complex_cpu else filter_complex)
-                fc = finalize_filter(fc)
-                print("[DEBUG] Filter graph:")
+                fc = finalize_filter_graph(fc)
+                print("FFMPEG FILTER GRAPH:")
                 print(fc)
                 hwaccel = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] if use_gpu_this else []
                 if effective_video_path == str(self.parent.video_path):
@@ -1042,6 +1056,8 @@ class ClipExporter:
                 enc_info = f" ({encoder_label})" if encoder_label else ""
                 self._progress(50, f"Mengode video{enc_info}...")
                 print(f"  [{description}] Executing FFmpeg...")
+                print("FFMPEG COMMAND:")
+                print(" ".join(cmd))
                 import sys # Import sys for platform check
                 import re
                 time_pat = re.compile(r'time=(\d+):(\d+):(\d+)\.(\d+)')
