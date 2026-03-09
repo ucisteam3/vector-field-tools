@@ -11,6 +11,8 @@ import random
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+from modules.smart_segmentation import find_sentence_boundaries
+
 # Optional: embedding + emotion models (lazy-loaded, skip if unavailable)
 _EMBEDDING_MODEL = None
 _EMOTION_MODEL = None
@@ -48,14 +50,14 @@ class AISegmentAnalyzer:
     WINDOW_OVERLAP_SEC = 4
     TOP_CANDIDATES_FOR_OPENAI = 250  # 120–250 candidate moments per hour
     TARGET_CLIPS_PER_HOUR = 20
-    CLIP_MIN_DURATION_SEC = 15
+    CLIP_MIN_DURATION_SEC = 10
     CLIP_MAX_DURATION_SEC = 60
 
     # [OPUS-STYLE] Multi-clip pipeline: sliding window for 10-30 clips per video
     OPUS_WINDOW_SIZE = 25
     OPUS_STEP_SIZE = 10
-    OPUS_CLIP_MIN = 15
-    OPUS_CLIP_MAX = 45
+    OPUS_CLIP_MIN = 10
+    OPUS_CLIP_MAX = 60
     OPUS_TOP_CLIPS = 20
     OPUS_OVERLAP_THRESHOLD = 0.60
     HOOK_PRE_ROLL_SEC = 2  # Start clip 2s before hook moment
@@ -914,20 +916,39 @@ class AISegmentAnalyzer:
             end = find_best_boundary_near(end, cues, search_window=3.0, is_start=False)
         return float(start), float(end), hook_time
 
-    def _build_clip_around_hook(self, hook_start: float, hook_end: float, duration_sec: float) -> tuple:
+    def _build_clip_around_hook(self, hook_start: float, hook_end: float, duration_sec: float, cues=None) -> tuple:
         """
-        Build clip around hook: start = hook - 2s, end = hook + 30–45s.
+        Build clip around hook with duration diversity + sentence safety:
+        start = hook - 2s
+        end = start + random target duration (then snap to sentence boundary if possible)
         Clamped to CLIP_MIN/MAX and video duration.
         """
-        clip_start = max(0.0, hook_start - self.HOOK_PRE_ROLL_SEC)
-        post = random.uniform(self.HOOK_POST_ROLL_MIN, self.HOOK_POST_ROLL_MAX)
-        clip_end = min(duration_sec, hook_end + post)
-        dur = clip_end - clip_start
-        if dur < self.CLIP_MIN_DURATION_SEC:
-            clip_end = min(duration_sec, clip_start + self.CLIP_MIN_DURATION_SEC)
-        if dur > self.CLIP_MAX_DURATION_SEC:
-            clip_end = clip_start + self.CLIP_MAX_DURATION_SEC
-        return (clip_start, clip_end)
+        start_time = max(0.0, hook_start - self.HOOK_PRE_ROLL_SEC)
+
+        # STEP 3 — Random target duration (avoid uniform clips)
+        target_duration = random.randint(12, 45)
+        clip_end = start_time + float(target_duration)
+
+        # STEP 4 — Align with sentence end (never cut speech)
+        try:
+            if cues:
+                sentence_boundaries = find_sentence_boundaries(cues)
+                for boundary_time, _ in sentence_boundaries:
+                    if boundary_time > clip_end:
+                        clip_end = float(boundary_time)
+                        break
+        except Exception:
+            pass
+
+        # STEP 5 — Safety limits
+        clip_end = min(float(clip_end), float(duration_sec))
+        clip_duration = float(clip_end) - float(start_time)
+        if clip_duration < 10.0:
+            clip_end = min(float(duration_sec), float(start_time) + 10.0)
+        if (float(clip_end) - float(start_time)) > 60.0:
+            clip_end = min(float(duration_sec), float(start_time) + 60.0)
+
+        return (float(start_time), float(clip_end))
 
     def _merge_overlapping_clips(self, segments: list, overlap_threshold: float = 0.7) -> list:
         """
