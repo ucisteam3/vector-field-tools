@@ -430,16 +430,22 @@ class ClipExporter:
                         '-vn', '-acodec', 'copy', '-avoid_negative_ts', 'make_zero',
                         str(temp_audio)
                     ], capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
-                    # Mux: Re-encode video (OpenCV mp4v can have timestamp drift) for A/V sync
+                    # Mux: Re-encode (OpenCV mp4v → h264) - NVENC jika tersedia
                     temp_full = Path(LOCAL_TEMP_DIR) / f"podcast_full_{int(time.time())}.mp4"
-                    subprocess.run([
-                        'ffmpeg', '-y', '-i', str(temp_video), '-i', str(temp_audio),
-                        '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+                    use_gpu_mux = getattr(self.parent, 'gpu_var', None) and self.parent.gpu_var.get()
+                    mux_base = ['ffmpeg', '-y', '-i', str(temp_video), '-i', str(temp_audio),
                         '-c:a', 'aac', '-b:a', '192k', '-shortest',
                         '-fflags', '+genpts', '-avoid_negative_ts', 'make_zero',
-                        '-max_muxing_queue_size', '1024',
-                        str(temp_full)
-                    ], capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
+                        '-max_muxing_queue_size', '1024', str(temp_full)]
+                    if use_gpu_mux:
+                        mux_cmd = mux_base[:4] + ['-c:v', 'h264_nvenc', '-preset', 'p1', '-cq', '23'] + mux_base[4:]
+                    else:
+                        mux_cmd = mux_base[:4] + ['-c:v', 'libx264', '-preset', 'fast', '-crf', '23'] + mux_base[4:]
+                    r = subprocess.run(mux_cmd, capture_output=True, text=True, creationflags=0x08000000 if os.name == "nt" else 0)
+                    if r.returncode != 0 and use_gpu_mux:
+                        print(f"  [PODCAST] NVENC mux gagal, fallback CPU: {r.stderr[-200:] if r.stderr else ''}")
+                        mux_cmd_cpu = mux_base[:4] + ['-c:v', 'libx264', '-preset', 'fast', '-crf', '23'] + mux_base[4:]
+                        subprocess.run(mux_cmd_cpu, capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
                     effective_video_path = str(temp_full)
                     effective_start = 0
                     effective_duration = pad_end - pad_start
