@@ -940,7 +940,8 @@ class ClipExporter:
             else:
                 fc_str += f"{audio_filter}[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
             
-            # Video-only minimal (no anull/aresample) for FFmpeg builds that lack those filters
+            # Ultra-minimal: only scale (no pad/setsar/crop) — works on any FFmpeg build
+            ultra_minimal_fc = "[0:v]scale=1080:1920[v_out];"
             minimal_fc_str_video_only = base_fc_str + base_last_v_label + "[v_out];"
             minimal_fc_str = base_fc_str + base_last_v_label + "[v_out];" + audio_filter + "[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
                 
@@ -963,13 +964,13 @@ class ClipExporter:
                 use_cpu = False  # Still using NVENC
                 print("  [GPU] Hybrid: NVDEC + CPU filters + NVENC")
             else:
-                # CPU fallback: video-only filter (no anull/aresample) to avoid "Filter not found"
+                # CPU fallback: ultra-minimal (scale+pad only), audio via -map 0:a
                 use_video_only_minimal = True
-                filter_complex = minimal_fc_str_video_only
-                filter_complex_cpu = minimal_fc_str_video_only
+                filter_complex = ultra_minimal_fc
+                filter_complex_cpu = ultra_minimal_fc
                 use_cpu = True
                 if has_heavy_filters:
-                    print("  [CPU] Fallback: filter video-only, audio direct (tanpa zoom/subtitle/watermark).")
+                    print("  [CPU] Fallback: scale+pad + audio direct (tanpa zoom/subtitle/watermark).")
             use_gpu_encode = use_pure_gpu or (use_pure_gpu_possible and not use_cpu)
 
             def get_ffmpeg_cmd(force_cpu=False):
