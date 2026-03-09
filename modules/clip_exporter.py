@@ -494,34 +494,8 @@ class ClipExporter:
             self._progress(3, f"Mode: {mode_label}...")
             print(f"  [EXPORT] Mode: {export_mode} ({mode_label})")
 
-            if not EXPORT_PIPELINE_AVAILABLE:
-                print("  [ERROR] Export pipeline not available.")
-                if clip_num is None:
-                    _safe_messagebox("error", "Kesalahan", "Modul export pipeline tidak tersedia.")
-                return False
-            return export_clip(
-                input_video=str(self.parent.video_path),
-                output_video=str(output_path),
-                start=result["start"],
-                duration=duration,
-                mode=export_mode,
-                subtitles=ass_path,
-                voiceover_path=voiceover_path,
-                bgm_file_path=bgm_file_path if has_bgm else None,
-                custom_settings=self.parent.custom_settings,
-                parent=self.parent,
-                effective_video_path=effective_video_path,
-                effective_start=effective_start,
-                effective_duration=effective_duration,
-                progress_callback=self._progress,
-                clip_num=clip_num,
-                output_filename=output_filename,
-                safe_messagebox=_safe_messagebox,
-            )
-
-            # Podcast Smart and filter/FFmpeg logic moved to export_pipeline; effective_* set above
-            if False:  # dead code kept for reference
-                effective_video_path = str(self.parent.video_path)
+            # Podcast Smart: pre-process video with per-frame active-speaker crop (sets effective_*)
+            effective_video_path = str(self.parent.video_path)
             effective_start = result['start']
             effective_duration = duration
             if export_mode == "podcast_smart" and PODCAST_SMART_AVAILABLE:
@@ -619,11 +593,33 @@ class ClipExporter:
             if input_args[0] == '-i':
                 input_args[1] = effective_video_path
 
-            use_pure_gpu_possible = _gpu_available() and getattr(self.parent, 'gpu_var', None) and self.parent.gpu_var.get()
-            base_supports_gpu = False
+            if not EXPORT_PIPELINE_AVAILABLE:
+                print("  [ERROR] Export pipeline not available.")
+                if clip_num is None:
+                    _safe_messagebox("error", "Kesalahan", "Modul export pipeline tidak tersedia.")
+                return False
+            return export_clip(
+                input_video=str(self.parent.video_path),
+                output_video=str(output_path),
+                start=result["start"],
+                duration=duration,
+                mode=export_mode,
+                subtitles=ass_path,
+                voiceover_path=voiceover_path,
+                bgm_file_path=bgm_file_path if has_bgm else None,
+                custom_settings=self.parent.custom_settings,
+                parent=self.parent,
+                effective_video_path=effective_video_path,
+                effective_start=effective_start,
+                effective_duration=effective_duration,
+                progress_callback=self._progress,
+                clip_num=clip_num,
+                output_filename=output_filename,
+                safe_messagebox=_safe_messagebox,
+            )
 
-            # --- Mode 1: Podcast Smart (preprocessed 1080x1920) — output 9:16, only setsar ---
-            if export_mode == "podcast_smart" and effective_video_path != str(self.parent.video_path):
+            # ---- legacy inlined filter/FFmpeg block removed; kept below as dead code for one more removal ----
+            if False and export_mode == "podcast_smart" and effective_video_path != str(self.parent.video_path):
                 base_supports_gpu = True
                 if use_pure_gpu_possible and not has_heavy_filters:
                     fc_str = "[0:v]scale_cuda=1080:1920[v_mixed];"
