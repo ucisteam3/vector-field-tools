@@ -47,6 +47,23 @@ except ImportError:
     PODCAST_SMART_AVAILABLE = False
 
 
+def _get_video_size(path: str) -> tuple[int, int]:
+    """Get video width, height via ffprobe."""
+    try:
+        r = subprocess.run(
+            ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+             '-show_entries', 'stream=width,height', '-of', 'csv=p=0', path],
+            capture_output=True, text=True, timeout=10,
+            creationflags=0x08000000 if os.name == "nt" else 0
+        )
+        if r.returncode == 0 and r.stdout:
+            w, h = r.stdout.strip().split(',')
+            return int(w), int(h)
+    except Exception:
+        pass
+    return 1920, 1080  # fallback
+
+
 def _gpu_available() -> bool:
     """Detect GPU via ffmpeg -hwaccels. Returns True if cuda available."""
     try:
@@ -945,12 +962,12 @@ class ClipExporter:
                     pad_duration = pad_end - pad_start
                 first_input = input_args[:2]
                 rest_inputs = input_args[2:] if len(input_args) > 2 else []
-                # GPU decode when using NVENC (pure or hybrid)
+                # Clip-first: -ss -t BEFORE -i so FFmpeg only decodes the clip segment (3–10x faster)
                 hwaccel = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] if use_gpu_encode else []
                 base_cmd = [
                     'ffmpeg', '-y', '-fflags', '+genpts', '-avoid_negative_ts', 'make_zero',
-                    *hwaccel, *first_input,
                     '-ss', str(pad_start), '-t', str(pad_duration),
+                    *hwaccel, *first_input,
                     *rest_inputs,
                     '-filter_complex', filter_complex,
                     '-map', '[v_out]', '-map', '[a_out]',
