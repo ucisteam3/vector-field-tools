@@ -54,12 +54,12 @@ class AISegmentAnalyzer:
     CLIP_MAX_DURATION_SEC = 60
 
     # [OPUS-STYLE] Multi-clip pipeline: sliding window for 10-30 clips per video
-    OPUS_WINDOW_SIZE = 25
-    OPUS_STEP_SIZE = 10
+    OPUS_WINDOW_SIZE = 30
+    OPUS_STEP_SIZE = 6
     OPUS_CLIP_MIN = 10
     OPUS_CLIP_MAX = 60
-    OPUS_TOP_CLIPS = 20
-    OPUS_OVERLAP_THRESHOLD = 0.60
+    OPUS_TOP_CLIPS = 30
+    OPUS_OVERLAP_THRESHOLD = 0.85
     HOOK_PRE_ROLL_SEC = 2  # Start clip 2s before hook moment
     HOOK_POST_ROLL_MIN = 30
     HOOK_POST_ROLL_MAX = 45
