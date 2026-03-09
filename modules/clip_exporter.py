@@ -456,10 +456,19 @@ class ClipExporter:
 
             # Construct Filter Complex
             fc_str = ""
-            export_mode = self.parent.custom_settings.get("export_mode", "landscape_fit")
-            mode_label = {"podcast_smart": "Podcast Smart", "face_tracking": "Face Tracking", "landscape_fit": "Landscape"}.get(export_mode, export_mode)
+            _raw_mode = self.parent.custom_settings.get("export_mode", "landscape_fit")
+            # Normalize: ensure only supported modes (portrait=face_tracking, landscape_fit, podcast_smart)
+            if _raw_mode in ("portrait", "face_tracking", "9:16", "portrait_9_16"):
+                export_mode = "face_tracking"
+            elif _raw_mode == "landscape_fit":
+                export_mode = "landscape_fit"
+            elif _raw_mode == "podcast_smart":
+                export_mode = "podcast_smart"
+            else:
+                export_mode = "landscape_fit"
+            mode_label = {"podcast_smart": "Podcast Smart", "face_tracking": "9:16 Portrait", "landscape_fit": "Landscape Fit"}.get(export_mode, export_mode)
             self._progress(3, f"Mode: {mode_label}...")
-            print(f"  [EXPORT] Mode: {export_mode}")
+            print(f"  [EXPORT] Mode: {export_mode} ({mode_label})")
 
             # Heavy filters force CPU fallback (no CUDA equivalents: zoompan, subtitles, drawtext, boxblur, overlay)
             has_heavy_filters = (
