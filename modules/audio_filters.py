@@ -6,31 +6,31 @@ from typing import List, Tuple, Optional
 
 
 def passthrough_audio() -> Tuple[str, List[str]]:
-    """Passthrough: [0:a]anull -> [a_sync]. Extra inputs: []. build_audio_filter adds tail."""
-    return "[0:a]anull[a_sync]", []
+    """Passthrough: [0:a] +3dB -> [a_sync]. Extra inputs: []. build_audio_filter adds tail."""
+    return "[0:a]volume=1.4125[a_sync]", []  # +3 dB
 
 
 def mix_voiceover(voiceover_path: str) -> Tuple[str, List[str]]:
-    """Original + voiceover. Input 0 = video (audio), 1 = voiceover. Output [a_sync]."""
+    """Original + voiceover. Input 0 = video (audio) +3dB, 1 = voiceover. Output [a_sync]."""
     extra = ["-i", voiceover_path]
-    filt = "[1:a]volume=1.5[vox];[0:a]volume=1.0[bg];[bg][vox]amix=inputs=2:duration=first:dropout_transition=2[a_sync]"
+    filt = "[1:a]volume=1.5[vox];[0:a]volume=1.4125[bg];[bg][vox]amix=inputs=2:duration=first:dropout_transition=2[a_sync]"  # orig +3 dB
     return filt, extra
 
 
 def mix_bgm(bgm_file_path: str) -> Tuple[str, List[str]]:
-    """Original + BGM (-10dB). Input 0 = video, 1 = BGM. Output [a_sync]. BGM looped."""
+    """Original +3 dB + BGM -15 dB. Input 0 = video, 1 = BGM. Output [a_sync]. BGM looped."""
     extra = ["-i", bgm_file_path]
-    filt = "[0:a]volume=1.0[orig];[1:a]volume=0.316,aloop=loop=-1:size=2e+09[bgm];[orig][bgm]amix=inputs=2:duration=first:dropout_transition=2[a_sync]"
+    filt = "[0:a]volume=1.4125[orig];[1:a]volume=0.178,aloop=loop=-1:size=2e+09[bgm];[orig][bgm]amix=inputs=2:duration=first:dropout_transition=2[a_sync]"  # orig +3dB, BGM -15dB
     return filt, extra
 
 
 def mix_voiceover_bgm(voiceover_path: str, bgm_file_path: str) -> Tuple[str, List[str]]:
-    """Original + voiceover + BGM. Input 0=video, 1=voiceover, 2=bgm. Output [a_sync]."""
+    """Original +3 dB + voiceover + BGM -15 dB. Input 0=video, 1=voiceover, 2=bgm. Output [a_sync]."""
     extra = ["-i", voiceover_path, "-i", bgm_file_path]
     filt = (
         "[1:a]volume=1.5[vox];"
-        "[0:a]volume=1.0[bg];"
-        "[2:a]volume=0.316,aloop=loop=-1:size=2e+09[bgm];"
+        "[0:a]volume=1.4125[bg];"  # orig +3 dB
+        "[2:a]volume=0.178,aloop=loop=-1:size=2e+09[bgm];"  # BGM -15 dB
         "[bg][vox]amix=inputs=2:duration=first[mix1];"
         "[mix1][bgm]amix=inputs=2:duration=first:dropout_transition=2[a_sync]"
     )

@@ -435,7 +435,7 @@ class ClipExporter:
             
             if has_bgm:
                 print(f"  [BGM] File: {os.path.basename(bgm_file_path)}")
-                print(f"  [BGM] Volume: -10dB (0.316x)")
+                print(f"  [BGM] Volume: -15dB (0.178x)")
                 print(f"  [BGM] Mode: Auto-Loop (menyesuaikan durasi clip)")
             
             if voiceover_path:
@@ -443,32 +443,30 @@ class ClipExporter:
                 # Let's use amix with volume adjustment: VOX at 1.5, BG at 0.4
                 if has_bgm:
                     # Complex: Original Audio + Voiceover + BGM
-                    # BGM at -10dB = volume=0.316 (10^(-10/20) ~= 0.316)
-                    # Original at 1.0 (KEEP FULL VOLUME), VOX at 1.5, BGM at 0.316
+                    # BGM -15dB (0.178), Original +3dB (1.4125), VOX at 1.5
                     audio_filter = (
                         "[1:a]volume=1.5[vox];"
-                        "[0:a]volume=1.0[bg];"
-                        "[2:a]volume=0.316,aloop=loop=-1:size=2e+09[bgm];"  # Loop BGM, -10dB
+                        "[0:a]volume=1.4125[bg];"
+                        "[2:a]volume=0.178,aloop=loop=-1:size=2e+09[bgm];"  # Loop BGM, -15dB
                         "[bg][vox]amix=inputs=2:duration=first[mix1];"
                         "[mix1][bgm]amix=inputs=2:duration=first:dropout_transition=2"
                     )
                     input_args = ['-i', str(self.parent.video_path), '-i', str(voiceover_path), '-i', bgm_file_path]
                 else:
                     # Original at 1.0 (KEEP FULL VOLUME), VOX at 1.5
-                    audio_filter = "[1:a]volume=1.5[vox];[0:a]volume=1.0[bg];[bg][vox]amix=inputs=2:duration=first:dropout_transition=2"
+                    audio_filter = "[1:a]volume=1.5[vox];[0:a]volume=1.4125[bg];[bg][vox]amix=inputs=2:duration=first:dropout_transition=2"  # orig +3dB
                     input_args = ['-i', str(self.parent.video_path), '-i', str(voiceover_path)]
             else:
                 if has_bgm:
-                    # Only BGM + Original Audio
-                    # BGM at -10dB = volume=0.316
+                    # Only BGM + Original Audio. Original +3dB, BGM -15dB
                     audio_filter = (
-                        "[0:a]volume=1.0[orig];"
-                        "[1:a]volume=0.316,aloop=loop=-1:size=2e+09[bgm];"  # Loop BGM, -10dB
+                        "[0:a]volume=1.4125[orig];"
+                        "[1:a]volume=0.178,aloop=loop=-1:size=2e+09[bgm];"  # Loop BGM, -15dB
                         "[orig][bgm]amix=inputs=2:duration=first:dropout_transition=2"
                     )
                     input_args = ['-i', str(self.parent.video_path), '-i', bgm_file_path]
                 else:
-                    audio_filter = "[0:a]anull"  # Passthrough
+                    audio_filter = "[0:a]volume=1.4125[orig];[orig]anull[a_sync]"  # Passthrough +3dB (exporter path uses a_sync; pipeline uses audio_filters)
                     input_args = ['-i', str(self.parent.video_path)]
 
 
