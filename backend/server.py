@@ -70,14 +70,24 @@ def _log_gpu_status():
             print(f"[GPU] CUDA: {name} - 90% VRAM, optimasi kecepatan aktif")
         else:
             print("[GPU] CUDA tidak terdeteksi - menggunakan CPU")
-        # Cek FFmpeg NVENC
+        # Cek FFmpeg NVENC + test encode
         try:
             r = subprocess.run(["ffmpeg", "-encoders"], capture_output=True, text=True, timeout=5,
                                creationflags=0x08000000 if __import__("os").name == "nt" else 0)
             nvenc_ok = "h264_nvenc" in (r.stdout or "")
-            print(f"[GPU] FFmpeg NVENC: {'Aktif - export akan ~5-10x lebih cepat' if nvenc_ok else 'Tidak tersedia - install FFmpeg dengan NVENC'}")
-        except Exception:
-            print("[GPU] FFmpeg NVENC: tidak bisa dicek")
+            if nvenc_ok:
+                # Quick test: 1 frame encode
+                t = subprocess.run(
+                    ["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=duration=0.1:size=1280x720:rate=1",
+                     "-c:v", "h264_nvenc", "-frames:v", "1", "-f", "null", "-"],
+                    capture_output=True, text=True, timeout=10,
+                    creationflags=0x08000000 if __import__("os").name == "nt" else 0)
+                nvenc_ok = t.returncode == 0
+                if not nvenc_ok:
+                    print(f"[GPU] FFmpeg NVENC: encoder ada tapi test gagal - {t.stderr[-150:] if t.stderr else 'unknown'}")
+            print(f"[GPU] FFmpeg NVENC: {'OK' if nvenc_ok else 'Tidak bisa dipakai - gunakan CPU'}")
+        except Exception as ex:
+            print(f"[GPU] FFmpeg NVENC: {ex}")
     except ImportError:
         print("[GPU] PyTorch tidak terinstall")
     except Exception as e:
