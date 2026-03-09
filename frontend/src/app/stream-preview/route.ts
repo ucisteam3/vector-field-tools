@@ -4,7 +4,8 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND = "http://127.0.0.1:8001";
+const API_PORT = process.env.NEXT_PUBLIC_API_PORT || "8001";
+const BACKEND = `http://127.0.0.1:${API_PORT}`;
 
 export async function GET(req: NextRequest) {
   const project = req.nextUrl.searchParams.get("project");
