@@ -294,7 +294,8 @@ class AnalysisOrchestrator:
                 
                 # A. Get Transcription First
                 print("  [INFO] Extracting full transcript for AI analysis...")
-                self.parent.progress_var.set("Mengekstrak audio dan transkripsi AI...")
+                if getattr(self.parent, "progress_var", None):
+                    self.parent.progress_var.set("Mengekstrak audio dan transkripsi AI...")
                 
                 # Try download/extract
                 audio_path = self.parent.download_youtube_audio(url)
@@ -310,7 +311,8 @@ class AnalysisOrchestrator:
                 # B. OpenAI-only: detect viral segments (clip selection)
                 if transcriptions and getattr(self.parent, "openai_available", False):
                     print("  [AI START] Mengirim transkrip ke OpenAI (GPT-4o)...")
-                    self.parent.progress_var.set("OpenAI sedang mendeteksi momen viral...")
+                    if getattr(self.parent, "progress_var", None):
+                        self.parent.progress_var.set("OpenAI sedang mendeteksi momen viral...")
                     kw_val = (self.parent.trend_keyword_var.get() or "").strip() if getattr(self.parent, "trend_keyword_var", None) else ""
                     ai_segments = self.parent.get_viral_segments_from_ai(transcriptions, keyword=kw_val or None)
                     if ai_segments:
