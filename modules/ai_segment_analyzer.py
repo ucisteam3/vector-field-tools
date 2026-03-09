@@ -1356,30 +1356,6 @@ class AISegmentAnalyzer:
             if len(deduped) >= top_n:
                 break
         deduped = deduped[:top_n]
-
-        # [DIVERSITY] Remove near-duplicate transcript content after overlap dedupe
-        deduped = self._dedupe_by_text_similarity(deduped, sim_threshold=0.86)
-
-        # [DURATION DIVERSITY] Nudge ends slightly to avoid uniform lengths (only when cues exist)
-        if cues and len(deduped) > 1:
-            try:
-                from modules.smart_segmentation import find_best_boundary_near
-            except Exception:
-                find_best_boundary_near = None
-            if find_best_boundary_near:
-                seen_bucket: dict[int, int] = {}
-                for seg in deduped:
-                    dur_s = float(seg["end"] - seg["start"])
-                    bucket = int(round(dur_s / 5.0) * 5)
-                    seen_bucket[bucket] = seen_bucket.get(bucket, 0) + 1
-                    if seen_bucket[bucket] <= 2:
-                        continue
-                    target_end = float(seg["end"]) + (1.6 if (seen_bucket[bucket] % 2 == 0) else -1.2)
-                    target_end = max(float(seg["start"]) + float(self.ABS_MIN_CLIP_SEC), min(float(seg["start"]) + float(self.ABS_MAX_CLIP_SEC), target_end))
-                    nudged = float(find_best_boundary_near(target_end, cues, search_window=2.5, is_start=False))
-                    if nudged > float(seg["start"]) + float(self.ABS_MIN_CLIP_SEC):
-                        seg["end"] = nudged
-
         deduped.sort(key=lambda x: (x.get("final_score", 0), x.get("viral_score", 0)), reverse=True)
         return deduped[:top_n]
 
@@ -1622,7 +1598,7 @@ class AISegmentAnalyzer:
                 "_hook_time": item.get("_hook_time"),
             }
 
-        # Dedupe by >60% overlap, keep higher final_score; remove low quality (STEP 10)
+        # Dedupe by >60% overlap, keep higher final_score
         if viral_segments:
             seg_list = list(viral_segments.items())
             seg_list.sort(key=lambda x: x[1].get("final_score", 0), reverse=True)
@@ -1637,9 +1613,7 @@ class AISegmentAnalyzer:
                         overlap_any = True
                         break
                 if not overlap_any:
-                    dur = seg["end"] - seg["start"]
-                    if dur >= 8.0 and seg.get("final_score", 0) >= 5:
-                        keep_ids.append(kid)
+                    keep_ids.append(kid)
             viral_segments = {k: viral_segments[k] for k in keep_ids if k in viral_segments}
 
         if viral_segments:
@@ -1681,16 +1655,7 @@ class AISegmentAnalyzer:
                                                              min_duration=8.0,
                                                              max_duration=60.0)
                     by_id = {s['_id']: s for s in segments_list}
-                    # [STEP 10] Remove low quality: incomplete sentence, very low score, < 8s
-                    MIN_CLIP_DURATION_SEC = 8.0
-                    MIN_FINAL_SCORE = 5
-                    refined_list = [
-                        seg for seg in refined_list
-                        if (seg['end'] - seg['start']) >= MIN_CLIP_DURATION_SEC
-                        and seg.get('final_score', 0) >= MIN_FINAL_SCORE
-                        and not seg.get('_incomplete_sentence', False)
-                    ]
-                    # [STEP 8] Sort by final_score descending (highest first)
+                    # Sort by final_score descending (highest first)
                     refined_list.sort(key=lambda s: (s.get('final_score', 0), -(s['end'] - s['start'])), reverse=True)
                     viral_segments = {}
                     for seg in refined_list:
