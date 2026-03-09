@@ -233,6 +233,15 @@ def project_detail(project_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to load project: {str(e)}")
 
 
+@app.get("/project/{project_id}/segments")
+def project_segments(project_id: str):
+    """Get segments (clips) for a project. Same data as project detail clips."""
+    meta = get_project(project_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {"segments": _sanitize_project(meta).get("clips", [])}
+
+
 @app.get("/project/{project_id}/status")
 def project_status(project_id: str):
     """Get analysis status (for polling during processing)."""
