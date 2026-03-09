@@ -417,6 +417,7 @@ def export_clip_with_settings(req: ExportClipRequest):
         import traceback
         traceback.print_exc()
     # Fallback: simple extract (-c copy) when full export fails
+    # Use -ss before -i for speed (avoid timeout on long videos)
     try:
         meta = get_project(req.project_id)
         if not meta or not meta.get("clips"):
@@ -439,15 +440,19 @@ def export_clip_with_settings(req: ExportClipRequest):
         out_path = out_dir / f"{safe_name}.mp4"
         import subprocess
         duration = end - start
-        cmd = ["ffmpeg", "-y", "-i", str(vp), "-ss", str(start), "-t", str(duration), "-c", "copy", "-avoid_negative_ts", "1", str(out_path)]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, creationflags=0x08000000 if __import__("os").name == "nt" else 0)
+        cmd = ["ffmpeg", "-y", "-ss", str(start), "-t", str(duration), "-i", str(vp), "-c", "copy", "-avoid_negative_ts", "1", str(out_path)]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=180, creationflags=0x08000000 if __import__("os").name == "nt" else 0)
         if result.returncode == 0 and out_path.exists():
             return {"clip_path": f"clips/{safe_name}.mp4"}
+        err_msg = result.stderr[-500:] if result.stderr else "FFmpeg gagal"
+        print(f"[SERVER] Fallback ffmpeg stderr: {err_msg}")
     except HTTPException:
         raise
     except Exception as fallback_err:
         print(f"[SERVER] Fallback extract failed: {fallback_err}")
-    raise HTTPException(status_code=500, detail="Export gagal. Cek log backend untuk detail.")
+        import traceback
+        traceback.print_exc()
+    raise HTTPException(status_code=500, detail="Export gagal. Pastikan backend berjalan dan cek log.")
 
 
 # Upload directories
