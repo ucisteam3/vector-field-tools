@@ -621,7 +621,6 @@ class ClipExporter:
                 last_v_label = "[v_flipped]"
             
             # --- SUBTITLE OVERLAY (skip if FFmpeg build has no 'subtitles' filter, e.g. no libass) ---
-            _has = _ffmpeg_has_filters("subtitles", "drawtext", "zoompan")
             if ass_path and _has.get("subtitles", True):
                 safe_ass_path = str(ass_path).replace("\\", "/").replace(":", "\\:")
                 fonts_dir = str(Path("assets/fonts").resolve()).replace("\\", "/").replace(":", "\\:")
@@ -729,7 +728,7 @@ class ClipExporter:
                     print(f"[EXPORT ERROR] Watermark failed: {e}")
 
             # --- OVERLAY LOGIC (Second Watermark) ---
-            if self.parent.custom_settings.get("overlay_enabled"):
+            if self.parent.custom_settings.get("overlay_enabled") and _has.get("drawtext", True):
                 try:
                     ov_type = self.parent.custom_settings.get("overlay_type", "text")
                     ov_pos_x_pct = self.parent.custom_settings.get("overlay_pos_x", 50)
@@ -815,7 +814,7 @@ class ClipExporter:
                     print(f"[EXPORT ERROR] Overlay failed: {e}")
 
             # --- SOURCE CREDIT LOGIC ---
-            if self.parent.custom_settings.get("source_credit_enabled"):
+            if self.parent.custom_settings.get("source_credit_enabled") and _has.get("drawtext", True):
                 try:
                     # Prioritas utama: pakai metadata channel asli yang sudah diambil di main.py
                     channel_name = getattr(self.parent, "channel_name", None)
