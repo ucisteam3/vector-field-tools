@@ -251,36 +251,36 @@ class ClipExporter:
             self._progress(2, "Skipping silence detection...")
         except Exception:
             pass
-        silence_offset = 0
-        if silence_offset > 0:
-            print(f"  [INSTANT START] Skipping first {silence_offset:.2f}s of silence")
-            result['start'] += silence_offset
-            # Note: We do NOT shift end time. This naturally shortens the clip slightly,
-            # which is fine as we are removing dead air.
 
-        if output_dir is None:
-            output_dir = Path("clips")
-            output_dir.mkdir(exist_ok=True)
-        else:
-            output_dir = Path(output_dir)
-        
-        # Generate safe filename from topic
-        topic = result.get("topic") or "Clip"
-        safe_topic = "".join(c for c in str(topic)[:50] if c.isalnum() or c in (" ", "-", "_")).strip()
-        if not safe_topic:
-            safe_topic = f"clip_{clip_num or 'selected'}"
-        
-        # Format output filename (Remove timestamps as requested)
-        output_filename = f"{safe_topic}.mp4"
-        output_path = output_dir / output_filename
-        
-        # Calculate duration
-        start = float(result.get("start", 0))
-        end = float(result.get("end", start + 30))
-        duration = max(0.1, end - start)
-        result["start"] = start
-        result["end"] = end
-        
+        if not isinstance(result, dict):
+            print("  [ERROR] Invalid result: not a dict.")
+            return False
+        try:
+            silence_offset = 0
+            if silence_offset > 0:
+                result["start"] = result.get("start", 0) + silence_offset
+
+            output_dir = Path(output_dir) if output_dir is not None else Path("clips")
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            topic = result.get("topic") or "Clip"
+            safe_topic = "".join(c for c in str(topic)[:50] if c.isalnum() or c in (" ", "-", "_")).strip()
+            if not safe_topic:
+                safe_topic = f"clip_{clip_num or 'selected'}"
+            output_filename = f"{safe_topic}.mp4"
+            output_path = output_dir / output_filename
+
+            start = float(result.get("start", 0))
+            end = float(result.get("end", start + 30))
+            duration = max(0.1, end - start)
+            result["start"] = start
+            result["end"] = end
+        except Exception as e:
+            print(f"  [EXPORT ERROR] Setup failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
         try:
             # Use ffmpeg to extract clip
             import subprocess
