@@ -16,18 +16,6 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 os.chdir(ROOT)
 sys.path.insert(0, ROOT)
 
-# Patch tkinter for headless backend
-try:
-    import tkinter
-    mb = getattr(tkinter, "messagebox", None)
-    if mb:
-        mb.showerror = lambda *a, **k: None
-        mb.showinfo = lambda *a, **k: None
-        mb.showwarning = lambda *a, **k: None
-        mb.askyesno = lambda *a, **k: True
-except Exception:
-    pass
-
 import uvicorn
 from backend.server import app
 

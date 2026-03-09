@@ -22,18 +22,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 os.chdir(PROJECT_ROOT)
 
-# Mock tkinter.messagebox for headless operation (before any module imports it)
-import tkinter
-try:
-    _tk_mb = getattr(tkinter, "messagebox", None)
-    if _tk_mb:
-        _tk_mb.showerror = lambda *a, **k: None
-        _tk_mb.showinfo = lambda *a, **k: None
-        _tk_mb.showwarning = lambda *a, **k: None
-        _tk_mb.askyesno = lambda *a, **k: True
-except Exception:
-    pass
-
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
