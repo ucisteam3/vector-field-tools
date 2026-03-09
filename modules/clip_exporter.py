@@ -624,7 +624,7 @@ class ClipExporter:
                 zoom_strength = max(1.1, min(2.0, zoom_strength))
                 zoom_speed = max(0.0015, min(0.008, zoom_speed))
                 print(f"  [DYNAMIC ZOOM] strength={zoom_strength}, speed={zoom_speed}")
-                fc_str += f"[v_mixed]zoompan=z='min(zoom+{zoom_speed:.4f},{zoom_strength:.2f})':d=2:s=1080x1920[v_zoom];"
+                fc_str += f"[v_mixed]zoompan=z='min(zoom+{zoom_speed:.4f},{zoom_strength:.2f})':d=1:s=1080x1920[v_zoom];"
                 last_v_label = "[v_zoom]"
             else:
                 last_v_label = "[v_mixed]"
@@ -935,8 +935,8 @@ class ClipExporter:
                 except Exception as e:
                     print(f"  [SOURCE CREDIT ERROR] {e}")
 
-            # Single setpts at end only (avoids duplicate timestamp reset, stabilizes duration)
-            fc_str += f"{last_v_label}setpts=PTS-STARTPTS[v_out];"
+            # Legacy: no FPS or timestamp manipulation — pipe ends at [v_out] for correct duration/sync
+            fc_str += f"{last_v_label}[v_out];"
             
             # --- AUDIO PITCH (optional) ---
             # aresample=async=1:first_pts=0 keeps audio in sync with video
@@ -961,7 +961,7 @@ class ClipExporter:
             elif use_pure_gpu_possible and not has_heavy_filters and not base_supports_gpu:
                 # GPU decode/encode with CPU filters (hwdownload -> filters -> hwupload)
                 fc_str = "[0:v]hwdownload,format=nv12[v0];" + fc_str.replace("[0:v]", "[v0]")
-                fc_str = fc_str.replace(f"{last_v_label}setpts=PTS-STARTPTS[v_out];", f"{last_v_label}setpts=PTS-STARTPTS,hwupload_cuda[v_out];")
+                fc_str = fc_str.replace(f"{last_v_label}[v_out];", f"{last_v_label}hwupload_cuda[v_out];")
                 filter_complex = fc_str
                 use_cpu = False  # Still using NVENC
                 print("  [GPU] Hybrid: NVDEC + CPU filters + NVENC")
