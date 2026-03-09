@@ -1460,6 +1460,10 @@ body {
   --tw-ring-color: rgb(6 182 212 / 0.5);
 }
 
+.disabled\:cursor-not-allowed:disabled {
+  cursor: not-allowed;
+}
+
 .disabled\:opacity-50:disabled {
   opacity: 0.5;
 }

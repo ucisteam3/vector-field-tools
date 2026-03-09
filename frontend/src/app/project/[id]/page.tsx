@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { Play, Download, Loader2, Sparkles } from "lucide-react";
+import { Play, Download, Loader2, Sparkles, RefreshCw } from "lucide-react";
 import {
   getProject,
   getProjectStatus,
@@ -13,6 +13,7 @@ import {
   fetchPreviewAsBlobUrl,
   exportClipAsync,
   getExportStatus,
+  retryProject,
   type Project,
 } from "@/lib/api";
 import { useAppSettings } from "@/lib/settings-store";
@@ -32,6 +33,7 @@ export default function ProjectPage() {
   const [blobCache, setBlobCache] = useState<Record<number, string>>({});
   const [downloading, setDownloading] = useState<Set<number>>(new Set());
   const [exportProgress, setExportProgress] = useState<{ progress: number; message: string; logs?: string[] } | null>(null);
+  const [reanalyzing, setReanalyzing] = useState(false);
   const blobCacheRef = useRef<Record<number, string>>({});
   blobCacheRef.current = blobCache;
 
@@ -133,6 +135,23 @@ export default function ProjectPage() {
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
+  const handleReanalyze = async () => {
+    const ok = await modal.confirm(
+      "Analisis ulang akan menggunakan video yang sudah ada di folder downloads (tanpa unduh lagi). Hasil klip mungkin berubah. Lanjut?",
+      { title: "Reanalyze", confirmText: "Reanalyze", cancelText: "Batal" }
+    );
+    if (!ok) return;
+    setReanalyzing(true);
+    try {
+      await retryProject(id);
+      await loadProject();
+    } catch (e) {
+      await modal.alert(e instanceof Error ? e.message : "Reanalyze gagal.", { title: "Error" });
+    } finally {
+      setReanalyzing(false);
+    }
+  };
+
   if (loading && !project) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -163,9 +182,19 @@ export default function ProjectPage() {
               <Sparkles className="w-5 h-5 text-cyan-400" /> Viral clips ({clips.length})
             </h2>
             {!isAnalyzing && (
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-zinc-500">Mode</label>
-                <select
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleReanalyze}
+                  disabled={reanalyzing}
+                  className="inline-flex items-center gap-2 rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-white hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {reanalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  Reanalyze
+                </button>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-zinc-500">Mode</label>
+                  <select
                   value={exportSettings.export_mode}
                   onChange={(e) => setExportSettings((s) => ({ ...s, export_mode: e.target.value as typeof s.export_mode }))}
                   className="bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-cyan-500/50 outline-none"
@@ -176,6 +205,7 @@ export default function ProjectPage() {
                     </option>
                   ))}
                 </select>
+                </div>
               </div>
             )}
           </div>

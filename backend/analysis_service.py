@@ -148,15 +148,29 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None):
                 on_progress(msg)
 
         try:
-            prog("Downloading video...")
-            # Use existing modules - need a context that provides the parent interface
             from backend.web_context import WebAppContext
-
             ctx = WebAppContext(project_dir, on_progress=prog)
             ctx.progress_var.set = lambda m: prog(m)
 
-            # Download to default downloads/ then copy to project
-            video_path = ctx.download_youtube_video(youtube_url)
+            # Check if video already exists in downloads folder (reanalyze without downloading again)
+            video_id = None
+            if "youtube.com" in youtube_url or "youtu.be" in youtube_url:
+                match = re.search(r"(?:v=|youtu.be/)([A-Za-z0-9_-]{11})", youtube_url)
+                if match:
+                    video_id = match.group(1)
+            downloads_dir = PROJECT_ROOT / "downloads"
+            existing_video = None
+            if video_id and downloads_dir.is_dir():
+                for f in os.listdir(downloads_dir):
+                    if video_id in f and f.endswith(".mp4"):
+                        existing_video = downloads_dir / f
+                        break
+            if existing_video and existing_video.exists():
+                prog("Using cached video...")
+                video_path = str(existing_video)
+            else:
+                prog("Downloading video...")
+                video_path = ctx.download_youtube_video(youtube_url)
             if not video_path or not os.path.exists(video_path):
                 raise Exception("Failed to download video")
 
