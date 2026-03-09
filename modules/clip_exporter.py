@@ -105,6 +105,11 @@ def _ffmpeg_has_filters(*names: str) -> dict:
     return {n: bool(re.search(r"\b" + re.escape(n.lower()) + r"\b", out)) for n in names}
 
 
+def finalize_filter(fc):
+    """Remove trailing semicolon so FFmpeg does not interpret an empty filter after the last label."""
+    return fc.rstrip(";").strip() if fc else fc
+
+
 def _safe_messagebox(kind, title, message):
     """Show messagebox only when GUI is available (desktop). In web/headless, just print to avoid crash."""
     try:
