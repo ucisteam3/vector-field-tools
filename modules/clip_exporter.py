@@ -46,6 +46,21 @@ try:
 except ImportError:
     PODCAST_SMART_AVAILABLE = False
 
+
+def _gpu_available() -> bool:
+    """Detect GPU via ffmpeg -hwaccels. Returns True if cuda available."""
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-hwaccels"],
+            capture_output=True, text=True, timeout=5,
+            creationflags=0x08000000 if os.name == "nt" else 0
+        )
+        out = (r.stdout or "") + (r.stderr or "")
+        return "cuda" in out.lower()
+    except Exception:
+        return False
+
+
 class ClipExporter:
     """Manages clip export operations including download, encoding, and voiceover.
     Backend-safe: works with WebAppContext via safe_parent_call."""
@@ -395,12 +410,41 @@ class ClipExporter:
                     tracker.close()
                     self._progress(15, "Podcast Smart: Memotong frame per-frame...")
                     cap = cv2.VideoCapture(str(self.parent.video_path))
-                    fps = cap.get(cv2.CAP_PROP_FPS)
+                    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
                     cap.set(cv2.CAP_PROP_POS_FRAMES, int(result['start'] * fps))
-                    temp_video = Path(LOCAL_TEMP_DIR) / f"podcast_video_{int(time.time())}.mp4"
+                    pad_start = max(0, result['start'] - 0.2)
+                    pad_end = result['start'] + duration + 0.2
+                    temp_full = Path(LOCAL_TEMP_DIR) / f"podcast_full_{int(time.time())}.mp4"
+                    temp_audio = Path(LOCAL_TEMP_DIR) / f"podcast_audio_{int(time.time())}.m4a"
                     Path(LOCAL_TEMP_DIR).mkdir(parents=True, exist_ok=True)
-                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                    out = cv2.VideoWriter(str(temp_video), fourcc, fps, (1080, 1920))
+                    # Extract audio first
+                    subprocess.run([
+                        'ffmpeg', '-y', '-i', str(self.parent.video_path),
+                        '-ss', str(pad_start), '-t', str(pad_end - pad_start),
+                        '-vn', '-acodec', 'copy', '-avoid_negative_ts', 'make_zero',
+                        str(temp_audio)
+                    ], capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
+                    use_gpu_mux = _gpu_available() and getattr(self.parent, 'gpu_var', None) and self.parent.gpu_var.get()
+                    self._progress(25, f"Podcast Smart: Encode ({'NVENC' if use_gpu_mux else 'CPU'})...")
+                    # Pipe raw frames to ffmpeg NVENC - no OpenCV mp4v
+                    nvenc_args = ['-c:v', 'h264_nvenc', '-preset', 'p5', '-tune', 'hq',
+                        '-rc:v', 'vbr', '-cq:v', '19', '-b:v', '6M', '-maxrate', '10M', '-bufsize', '12M']
+                    cpu_args = ['-c:v', 'libx264', '-preset', 'fast', '-crf', '23']
+                    enc_args = nvenc_args if use_gpu_mux else cpu_args
+                    ffmpeg_cmd = [
+                        'ffmpeg', '-y',
+                        '-f', 'rawvideo', '-pix_fmt', 'bgr24', '-s', '1080x1920', '-r', str(fps),
+                        '-i', 'pipe:0',
+                        '-i', str(temp_audio),
+                        *enc_args,
+                        '-c:a', 'aac', '-b:a', '192k', '-shortest',
+                        '-fflags', '+genpts', '-avoid_negative_ts', 'make_zero',
+                        '-max_muxing_queue_size', '1024', str(temp_full)
+                    ]
+                    proc = subprocess.Popen(
+                        ffmpeg_cmd, stdin=subprocess.PIPE,
+                        creationflags=0x08000000 if os.name == "nt" else 0
+                    )
                     total_frames = len(crop_boxes)
                     frame_idx = 0
                     while frame_idx < len(crop_boxes):
@@ -412,46 +456,21 @@ class ClipExporter:
                         cropped = frame[y:y+ch, x:x+cw]
                         if cropped.size:
                             scaled = cv2.resize(cropped, (1080, 1920))
-                            out.write(scaled)
+                            proc.stdin.write(scaled.tobytes())
                         frame_idx += 1
                         if total_frames and frame_idx % 10 == 0:
-                            pct = 15 + int(30 * frame_idx / total_frames)
-                            self._progress(min(pct, 45), f"Podcast Smart: Crop frame {frame_idx}/{total_frames}")
+                            pct = 25 + int(20 * frame_idx / total_frames)
+                            self._progress(min(pct, 45), f"Podcast Smart: Frame {frame_idx}/{total_frames}")
                     cap.release()
-                    out.release()
-                    use_gpu_mux = getattr(self.parent, 'gpu_var', None) and self.parent.gpu_var.get()
-                    self._progress(45, f"Menggabungkan video+audio ({'NVENC' if use_gpu_mux else 'CPU'})...")
-                    # Extract audio
-                    temp_audio = Path(LOCAL_TEMP_DIR) / f"podcast_audio_{int(time.time())}.m4a"
-                    pad_start = max(0, result['start'] - 0.2)
-                    pad_end = result['start'] + duration + 0.2
-                    # [A/V SYNC] -ss after -i, -avoid_negative_ts for clean timestamps
-                    subprocess.run([
-                        'ffmpeg', '-y', '-i', str(self.parent.video_path),
-                        '-ss', str(pad_start), '-t', str(pad_end - pad_start),
-                        '-vn', '-acodec', 'copy', '-avoid_negative_ts', 'make_zero',
-                        str(temp_audio)
-                    ], capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
-                    # Mux: Re-encode (OpenCV mp4v → h264) - NVENC jika tersedia
-                    temp_full = Path(LOCAL_TEMP_DIR) / f"podcast_full_{int(time.time())}.mp4"
-                    use_gpu_mux = getattr(self.parent, 'gpu_var', None) and self.parent.gpu_var.get()
-                    mux_base = ['ffmpeg', '-y', '-i', str(temp_video), '-i', str(temp_audio),
-                        '-c:a', 'aac', '-b:a', '192k', '-shortest',
-                        '-fflags', '+genpts', '-avoid_negative_ts', 'make_zero',
-                        '-max_muxing_queue_size', '1024', str(temp_full)]
-                    if use_gpu_mux:
-                        mux_cmd = mux_base[:4] + ['-c:v', 'h264_nvenc', '-preset', 'p5', '-b:v', '6M'] + mux_base[4:]
-                    else:
-                        mux_cmd = mux_base[:4] + ['-c:v', 'libx264', '-preset', 'fast', '-crf', '23'] + mux_base[4:]
-                    r = subprocess.run(mux_cmd, capture_output=True, text=True, creationflags=0x08000000 if os.name == "nt" else 0)
-                    if r.returncode != 0 and use_gpu_mux:
-                        print(f"  [PODCAST] NVENC mux gagal: {r.stderr[-200:] if r.stderr else ''}")
-                        raise RuntimeError("NVENC gagal pada langkah podcast mux.")
+                    proc.stdin.close()
+                    proc.wait()
+                    if proc.returncode != 0 and use_gpu_mux:
+                        print(f"  [PODCAST] NVENC encode gagal (exit {proc.returncode})")
+                        raise RuntimeError("NVENC gagal pada podcast encode.")
                     effective_video_path = str(temp_full)
                     effective_start = 0
                     effective_duration = pad_end - pad_start
                     try:
-                        temp_video.unlink(missing_ok=True)
                         temp_audio.unlink(missing_ok=True)
                     except Exception:
                         pass
