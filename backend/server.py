@@ -172,6 +172,25 @@ def _save_root_config(cfg: dict) -> None:
     cfg_path.write_text(json.dumps(cfg, indent=4, ensure_ascii=False), encoding="utf-8")
 
 
+def _migrate_remove_groq_from_config() -> None:
+    """Groq = Default API from Pastebin; remove any Groq keys stored in config.json."""
+    cfg = _load_root_config()
+    api = cfg.get("api_keys") or {}
+    changed = False
+    if api.get("groq"):
+        api["groq"] = []
+        cfg["api_keys"] = api
+        changed = True
+    if cfg.get("user_groq_keys"):
+        cfg["user_groq_keys"] = []
+        changed = True
+    if cfg.get("groq_key"):
+        cfg["groq_key"] = ""
+        changed = True
+    if changed:
+        _save_root_config(cfg)
+
+
 def _normalize_key_lines(keys: list[str]) -> list[str]:
     out: list[str] = []
     for k in keys or []:
@@ -204,6 +223,7 @@ def _get_default_api_keys():
 @app.get("/settings/api_keys")
 def get_api_keys():
     """Get stored API keys (1 per line in UI). Groq = Default API from Pastebin, not editable."""
+    _migrate_remove_groq_from_config()
     cfg = _load_root_config()
     api = cfg.get("api_keys") or {}
     rotate = cfg.get("rotate_on_error") or {}
