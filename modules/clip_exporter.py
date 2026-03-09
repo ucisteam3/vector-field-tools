@@ -232,14 +232,25 @@ class ClipExporter:
                 pass
 
     def download_clip(self, result, output_dir=None, clip_num=None):
-        """Download a single clip using ffmpeg with high quality re-encoding"""
-        self._progress(0, "Memulai export...")
-        if not self.parent or not getattr(self.parent, "video_path", None):
+        """Download a single clip using ffmpeg with high quality re-encoding."""
+        try:
+            self._progress(0, "Memulai export...")
+        except Exception:
+            pass
+        if not self.parent:
+            print("  [ERROR] Export context (parent) missing.")
+            return False
+        video_path = getattr(self.parent, "video_path", None)
+        if not video_path or not str(video_path).strip():
+            print("  [ERROR] Video path not set.")
             _safe_messagebox("error", "Error", "Video belum diunduh!")
             return False
 
         # [INSTANT START] Leading silence detection disabled to avoid export pipeline crashes
-        self._progress(2, "Skipping silence detection...")
+        try:
+            self._progress(2, "Skipping silence detection...")
+        except Exception:
+            pass
         silence_offset = 0
         if silence_offset > 0:
             print(f"  [INSTANT START] Skipping first {silence_offset:.2f}s of silence")
