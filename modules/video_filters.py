@@ -15,11 +15,11 @@ def finalize_filter_graph(fc: str) -> str:
 
 
 def append_filter(fc: str, chain: str) -> str:
-    """Safe builder: prevents accidental double semicolons between filter chains."""
-    if not fc or not fc.strip():
-        return chain.strip() if chain else ""
+    """Safe builder: ignores empty chains, prevents double semicolons."""
     if not chain or not chain.strip():
-        return fc.strip()
+        return fc.strip() if fc else ""
+    if not fc or not fc.strip():
+        return chain.strip()
     return fc.strip().rstrip(";") + ";" + chain.strip().lstrip(";")
 
 
@@ -47,10 +47,10 @@ def podcast_passthrough(use_gpu: bool = False) -> str:
 
 
 def apply_zoom(input_label: str, strength: float = 1.55, speed: float = 0.0032) -> str:
-    """Output label: [v_zoom]."""
+    """Output label: [v_zoom]. zoom never drops below 1.0."""
     strength = max(1.1, min(2.0, strength))
     speed = max(0.0015, min(0.008, speed))
-    return f"{input_label}zoompan=z='min(zoom+{speed:.4f},{strength:.2f})':d=1:s=1080x1920[v_zoom]"
+    return f"{input_label}zoompan=z='min(max(zoom,1.0)+{speed:.4f},{strength:.2f})':d=1:s=1080x1920[v_zoom]"
 
 
 def apply_flip(input_label: str) -> str:
@@ -213,5 +213,5 @@ def apply_source_credit(
 
 
 def chain_to_v_out(last_label: str) -> str:
-    """Append final output label. last_label is e.g. [v_credit] or [v_mixed]."""
-    return f"{last_label}[v_out]"
+    """Append valid final stage: last_label -> null -> [v_out]. Prevents invalid [v_wm][v_out] graph."""
+    return f"{last_label}null[v_out]"

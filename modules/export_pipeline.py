@@ -30,9 +30,11 @@ from modules.ffmpeg_runner import (
 )
 
 
-# --- Constants ---
-MINIMAL_VIDEO_FC = "[0:v]scale=1080:1920[v_out]"
-ULTRA_MINIMAL_VIDEO_FC = "[0:v]scale=1080:1920[v_out]"
+# --- Constants (portrait 9:16 safe fallbacks) ---
+PORTRAIT_SAFE_FC = "[0:v]setsar=1,crop=ih*9/16:ih:(iw-(ih*9/16))/2:0,scale=1080:1920[v_out]"
+MINIMAL_VIDEO_FC = PORTRAIT_SAFE_FC
+ULTRA_MINIMAL_VIDEO_FC = PORTRAIT_SAFE_FC
+MINIMAL_VIDEO_FC_GPU = "[0:v]scale_cuda=1080:1920[v_out]"
 
 
 def build_video_filter(
@@ -59,7 +61,7 @@ def build_video_filter(
     extra_inputs: List[str] = []
 
     # Base mode
-    if mode == "podcast_smart" and podcast_preprocessed:
+    if mode == "podcast_smart":
         fc = podcast_passthrough(use_gpu=use_gpu)
         last = "[v_mixed]"
     elif mode == "face_tracking":
@@ -90,9 +92,9 @@ def build_video_filter(
         fc = append_filter(fc, apply_subtitles(last, ass_path, fonts_dir))
         last = "[v_sub]"
 
-    # Watermark (image index = num_inputs)
+    # Watermark (image index = num_inputs + existing extra inputs)
     if has_watermark and _has.get("drawtext", True):
-        wm_idx = num_inputs
+        wm_idx = num_inputs + len(extra_inputs)
         seg, ext = apply_watermark(last, settings, wm_idx=wm_idx)
         if seg:
             fc = append_filter(fc, seg)
@@ -243,9 +245,12 @@ def export_clip(
 
     def make_cmd(force_cpu: bool = False, fc_override: Optional[str] = None) -> List[str]:
         fc = fc_override if fc_override is not None else (filter_complex_cpu if force_cpu else filter_complex)
+        # Prefer GPU minimal (scale_cuda + nvenc) when GPU available and using minimal fallback
+        if fc_override in (MINIMAL_VIDEO_FC, ULTRA_MINIMAL_VIDEO_FC) and not force_cpu and gpu_available():
+            fc = MINIMAL_VIDEO_FC_GPU
         fc = finalize_filter_graph(fc)
-        map_audio = "0:a" if (fc_override == MINIMAL_VIDEO_FC or fc_override == ULTRA_MINIMAL_VIDEO_FC) else map_a
-        use_gpu_this = use_gpu_encode and not force_cpu and fc_override is None
+        map_audio = "0:a" if (fc_override in (MINIMAL_VIDEO_FC, ULTRA_MINIMAL_VIDEO_FC) or fc == MINIMAL_VIDEO_FC_GPU) else map_a
+        use_gpu_this = (use_gpu_encode and not force_cpu and fc_override is None) or (fc == MINIMAL_VIDEO_FC_GPU and not force_cpu)
         hwaccel = ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"] if use_gpu_this else []
         cmd = [
             "ffmpeg", "-y", "-fflags", "+genpts", "-avoid_negative_ts", "make_zero",
@@ -331,17 +336,15 @@ def export_clip(
         msg_ok("Berhasil", f"Klip berhasil diekspor (minimal):\n{out_name}")
         return True
 
-    # Ultra minimal: -vf scale=1080:1920 (no filter_complex)
+    # Ultra minimal: portrait-safe filter_complex (BUG 9+10: finalize, keep 9:16)
     progress(50, "Mencoba ultra-minimal...")
-    fc_ultra = ULTRA_MINIMAL_VIDEO_FC
-    use_gpu_this = False
-    hwaccel = []
+    fc_ultra = finalize_filter_graph(PORTRAIT_SAFE_FC)
     cmd = [
         "ffmpeg", "-y", "-fflags", "+genpts", "-avoid_negative_ts", "make_zero",
         "-ss", str(pad_start), "-t", str(pad_duration),
         "-i", effective_video_path,
-        "-vf", "scale=1080:1920",
-        "-map", "0:a",
+        "-filter_complex", fc_ultra,
+        "-map", "[v_out]", "-map", "0:a",
         "-c:v", "libx264", "-preset", "fast", "-crf", "23",
         "-maxrate", "8M", "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
         "-max_muxing_queue_size", "1024",

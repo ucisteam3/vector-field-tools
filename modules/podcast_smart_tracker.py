@@ -218,8 +218,8 @@ class PodcastSmartTracker:
             box = center_x_to_box(cx)
             return [box] * total_frames
 
-        # ~sample_rate FPS sampling: sample_interval = fps / sample_rate (e.g. 5 FPS when sample_rate=5)
-        sample_interval = max(1, int(fps / sample_rate))
+        # Faster sampling for responsiveness: ~5 samples per second
+        sample_interval = max(1, int(fps / 5))
         n_samples = max(1, (total_frames + sample_interval - 1) // sample_interval)
         timeline: List[float] = []
         last_center_x = float(w // 2)
