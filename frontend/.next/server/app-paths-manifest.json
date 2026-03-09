@@ -1,6 +1,6 @@
 {
-  "/settings/page": "app/settings/page.js",
   "/page": "app/page.js",
+  "/stream-preview/route": "app/stream-preview/route.js",
   "/project/[id]/page": "app/project/[id]/page.js",
-  "/stream-clip/route": "app/stream-clip/route.js"
+  "/settings/page": "app/settings/page.js"
 }

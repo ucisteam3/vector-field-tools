@@ -1,17 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import { CheckCircle } from "lucide-react";
 import AppSidebar from "@/components/AppSidebar";
 import ExportSettingsPanel from "@/components/ExportSettingsPanel";
 import { useAppSettings } from "@/lib/settings-store";
 
 export default function SettingsPage() {
   const [settings, setSettings] = useAppSettings();
-  const [saved, setSaved] = useState(false);
+  const [showSavedModal, setShowSavedModal] = useState(false);
 
   const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setShowSavedModal(true);
   };
 
   return (
@@ -23,11 +23,6 @@ export default function SettingsPage() {
           <p className="text-zinc-400 mb-6">
             Konfigurasi pengaturan sebelum memulai analisis. Preview dan hasil export akan mengikuti pengaturan ini.
           </p>
-          {saved && (
-            <div className="mb-4 px-4 py-2 rounded-lg bg-cyan-500/20 text-cyan-400 text-sm">
-              Tersimpan!
-            </div>
-          )}
           <div className="rounded-xl border border-zinc-700 bg-zinc-800/50 overflow-hidden">
             <ExportSettingsPanel
               settings={settings}
@@ -38,6 +33,30 @@ export default function SettingsPage() {
           </div>
         </div>
       </main>
+
+      {showSavedModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowSavedModal(false)}
+        >
+          <div
+            className="bg-zinc-800 border border-zinc-600 rounded-xl p-6 shadow-xl max-w-sm mx-4 text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CheckCircle className="w-14 h-14 text-cyan-400 mx-auto mb-3" />
+            <h3 className="text-lg font-semibold text-white mb-2">Pengaturan sudah disimpan</h3>
+            <p className="text-sm text-zinc-400 mb-4">
+              Pengaturan akan digunakan untuk preview dan export klip berikutnya.
+            </p>
+            <button
+              onClick={() => setShowSavedModal(false)}
+              className="w-full py-2.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-medium transition-colors"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
