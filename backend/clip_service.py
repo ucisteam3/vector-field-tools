@@ -1,11 +1,13 @@
 """
 Clip Service - Export clips using existing clip_exporter, serve clip files.
 Supports custom export settings (subtitle, watermark, BGM, effects, etc.)
+Parallel export via ThreadPoolExecutor (max_workers = min(4, cpu_count)) for batch speed.
 """
 
 import os
 from pathlib import Path
 from typing import Optional
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -160,9 +162,17 @@ def export_clip(
     return None
 
 
+def _export_one_clip(args) -> tuple[int, Optional[str]]:
+    """Worker for parallel export: (project_id, clip_index, merged) -> (index, filename or None)."""
+    project_id, clip_index, merged = args
+    fn = export_clip(project_id, clip_index, merged)
+    return clip_index, fn
+
+
 def export_all_clips(project_id: str, settings: Optional[dict] = None, on_progress=None) -> list[str]:
     """Export all clips for a project. Returns list of clip filenames.
-    on_progress(current_index, total) called before each clip.
+    Uses ThreadPoolExecutor for parallel export (max 4 workers) when multiple clips.
+    on_progress(completed_count, total) called as each clip finishes.
     """
     from backend.project_manager import get_project
     meta = get_project(project_id)
@@ -172,14 +182,37 @@ def export_all_clips(project_id: str, settings: Optional[dict] = None, on_progre
     if settings:
         merged = {**merged, **settings}
     total = len(meta["clips"])
-    exported = []
-    for i in range(total):
+    if total == 0:
+        return []
+
+    max_workers = min(4, os.cpu_count() or 4)
+    results = [None] * total  # index -> filename
+
+    if total == 1:
+        fn = export_clip(project_id, 0, merged if merged else None)
         if on_progress:
             try:
-                on_progress(i + 1, total)
+                on_progress(1, 1)
             except Exception:
                 pass
-        fn = export_clip(project_id, i, merged if merged else None)
-        if fn:
-            exported.append(fn)
-    return exported
+        return [fn] if fn else []
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_export_one_clip, (project_id, i, merged if merged else None)): i
+            for i in range(total)
+        }
+        done = 0
+        for future in as_completed(futures):
+            try:
+                idx, fn = future.result()
+                results[idx] = fn
+                done += 1
+                if on_progress:
+                    try:
+                        on_progress(done, total)
+                    except Exception:
+                        pass
+            except Exception as e:
+                print(f"[CLIP SERVICE] Parallel export error: {e}")
+    return [r for r in results if r]

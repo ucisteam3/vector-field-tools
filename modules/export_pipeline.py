@@ -194,7 +194,7 @@ def export_clip(
     )
     use_gpu_possible = gpu_available() and (getattr(parent, "gpu_var", None) and parent.gpu_var.get() if parent else False)
     podcast_preprocessed = mode == "podcast_smart" and effective_video_path != input_video
-    base_supports_gpu = mode == "podcast_smart" and podcast_preprocessed
+    base_supports_gpu = mode == "podcast_smart"  # podcast_smart always allows scale_cuda path
     use_pure_gpu = use_gpu_possible and not has_heavy and base_supports_gpu
     use_cpu = not use_pure_gpu
     use_video_only_minimal = use_cpu  # CPU path uses -map 0:a
@@ -251,6 +251,7 @@ def export_clip(
         fc = finalize_filter_graph(fc)
         map_audio = "0:a" if (fc_override in (MINIMAL_VIDEO_FC, ULTRA_MINIMAL_VIDEO_FC) or fc == MINIMAL_VIDEO_FC_GPU) else map_a
         use_gpu_this = (use_gpu_encode and not force_cpu and fc_override is None) or (fc == MINIMAL_VIDEO_FC_GPU and not force_cpu)
+        # Clip-first: -ss -t before input for fast decode; GPU decode when available (NVDEC)
         hwaccel = ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"] if use_gpu_this else []
         cmd = [
             "ffmpeg", "-y", "-fflags", "+genpts", "-avoid_negative_ts", "make_zero",
@@ -262,8 +263,7 @@ def export_clip(
         ]
         if use_gpu_this:
             cmd.extend([
-                "-c:v", "h264_nvenc", "-preset", "p5", "-tune", "hq",
-                "-rc:v", "vbr", "-cq:v", "19", "-b:v", "6M", "-maxrate", "10M", "-bufsize", "12M",
+                "-c:v", "h264_nvenc", "-preset", "p4", "-b:v", "8M", "-maxrate", "10M", "-bufsize", "20M",
                 "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
                 output_video,
             ])
@@ -336,20 +336,26 @@ def export_clip(
         msg_ok("Berhasil", f"Klip berhasil diekspor (minimal):\n{out_name}")
         return True
 
-    # Ultra minimal: portrait-safe filter_complex (BUG 9+10: finalize, keep 9:16)
+    # Ultra minimal: clip-first, portrait-safe; use GPU when available
     progress(50, "Mencoba ultra-minimal...")
     fc_ultra = finalize_filter_graph(PORTRAIT_SAFE_FC)
+    use_gpu_ultra = gpu_available()
+    if use_gpu_ultra:
+        fc_ultra = finalize_filter_graph(MINIMAL_VIDEO_FC_GPU)
+    hwaccel_ultra = ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"] if use_gpu_ultra else []
     cmd = [
         "ffmpeg", "-y", "-fflags", "+genpts", "-avoid_negative_ts", "make_zero",
         "-ss", str(pad_start), "-t", str(pad_duration),
-        "-i", effective_video_path,
+        *hwaccel_ultra, "-i", effective_video_path,
         "-filter_complex", fc_ultra,
         "-map", "[v_out]", "-map", "0:a",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-        "-maxrate", "8M", "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
         "-max_muxing_queue_size", "1024",
-        output_video,
     ]
+    if use_gpu_ultra:
+        cmd.extend(["-c:v", "h264_nvenc", "-preset", "p4", "-b:v", "8M", "-maxrate", "10M", "-bufsize", "20M"])
+    else:
+        cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "23", "-maxrate", "8M"])
+    cmd.extend(["-c:a", "aac", "-b:a", "192k", "-ar", "48000", output_video])
     ret = run_ffmpeg(cmd, progress_callback=progress, encode_duration=encode_dur)
     if ret == 0:
         progress(100, "Selesai (ultra-minimal)")

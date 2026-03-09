@@ -78,16 +78,17 @@ def run_ffmpeg(
     Run FFmpeg command: print command, stream logs in real time, capture errors, return exit code.
     Uses subprocess.Popen for real-time output.
     """
+    print("")
     print("FFMPEG FILTER GRAPH:")
-    # Filter graph is the arg after -filter_complex
     try:
         idx = cmd.index("-filter_complex")
         if idx + 1 < len(cmd):
             print(cmd[idx + 1])
     except ValueError:
-        pass
+        print("(none)")
     print("FFMPEG COMMAND:")
     print(" ".join(cmd))
+    print("")
 
     time_pat = None
     if encode_duration and encode_duration > 0:
