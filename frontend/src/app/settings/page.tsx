@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { CheckCircle, Loader2 } from "lucide-react";
 import AppSidebar from "@/components/AppSidebar";
 import ExportSettingsPanel from "@/components/ExportSettingsPanel";
 import { useAppSettings } from "@/lib/settings-store";
@@ -9,6 +9,9 @@ import { useAppSettings } from "@/lib/settings-store";
 export default function SettingsPage() {
   const [settings, setSettings] = useAppSettings();
   const [showSavedModal, setShowSavedModal] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   const handleSave = () => {
     setShowSavedModal(true);
@@ -24,12 +27,18 @@ export default function SettingsPage() {
             Konfigurasi pengaturan sebelum memulai analisis. Preview dan hasil export akan mengikuti pengaturan ini.
           </p>
           <div className="rounded-xl border border-zinc-700 bg-zinc-800/50 overflow-hidden">
-            <ExportSettingsPanel
-              settings={settings}
-              onChange={setSettings}
-              standalone
-              onSave={handleSave}
-            />
+            {mounted ? (
+              <ExportSettingsPanel
+                settings={settings}
+                onChange={setSettings}
+                standalone
+                onSave={handleSave}
+              />
+            ) : (
+              <div className="p-8 flex items-center justify-center min-h-[200px]">
+                <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
+              </div>
+            )}
           </div>
         </div>
       </main>
