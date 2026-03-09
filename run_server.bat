@@ -8,9 +8,13 @@ if errorlevel 1 (echo Tidak ada proses Node.) else (echo Node berhasil dimatikan
 echo.
 
 echo Mematikan backend lama di port 8001 (jika ada)...
-python -c "import subprocess,re; out=subprocess.check_output(['netstat','-ano'],text=True,errors='ignore'); pids=set(re.findall(r':8001\\s+[^\\s]+\\s+[^\\s]+\\s+LISTENING\\s+(\\d+)',out)); print('PIDs',sorted(pids)); [subprocess.run(['taskkill','/F','/PID',pid],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL) for pid in pids]"
-timeout /t 1 /nobreak >nul
-python -c "import subprocess,re; out=subprocess.check_output(['netstat','-ano'],text=True,errors='ignore'); pids=set(re.findall(r':8001\\s+[^\\s]+\\s+[^\\s]+\\s+LISTENING\\s+(\\d+)',out)); print('[WARNING] Port 8001 masih dipakai oleh PID '+', '.join(sorted(pids)) if pids else 'Port 8001 kosong')"
+python "scripts\\kill_port.py" 8001 5
+if errorlevel 1 (
+  echo.
+  echo GAGAL mematikan proses backend di port 8001. Tutup semua jendela backend lama lalu jalankan lagi.
+  pause
+  exit /b 1
+)
 echo.
 
 echo Menjalankan Backend (API)...
