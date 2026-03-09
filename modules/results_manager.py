@@ -154,12 +154,14 @@ class ResultsManager:
 
     
     def on_segment_select(self, event):
-        """Handle segment selection to show details"""
-        selection = self.parent.results_tree.selection()
+        """Handle segment selection to show details (no-op when headless)."""
+        tree = getattr(self.parent, "results_tree", None)
+        if tree is None:
+            return
+        selection = tree.selection()
         if not selection:
             return
-        
-        item = self.parent.results_tree.item(selection[0])
+        item = tree.item(selection[0])
         values = item['values']
         
         # Find corresponding result
@@ -200,8 +202,10 @@ class ResultsManager:
                     details += f"Hook (3 detik pertama):\n{hook_3s}\n\n"
                 details += f"Content:\n{content_text}"
 
-                self.parent.details_text.delete(1.0, tk.END)
-                self.parent.details_text.insert(1.0, details)
+                details_text = getattr(self.parent, "details_text", None)
+                if details_text:
+                    details_text.delete(1.0, END)
+                    details_text.insert(1.0, details)
                 break
 
     
@@ -216,7 +220,6 @@ class ResultsManager:
             filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
             title="Simpan Hasil Analisis"
         )
-        
         if filename:
             try:
                 export_data = {
@@ -247,10 +250,13 @@ class ResultsManager:
 
     
     def download_selected_clips(self):
-        """Download clips for all checked segments in a background thread"""
+        """Download clips for all checked segments in a background thread (no-op when headless)."""
+        tree = getattr(self.parent, "results_tree", None)
+        if tree is None:
+            return
         checked_segments = []
-        for item_id in self.parent.results_tree.get_children():
-            item = self.parent.results_tree.item(item_id)
+        for item_id in tree.get_children():
+            item = tree.item(item_id)
             if item['values'][0] == "[X]":
                 start_str = item['values'][1]
                 for result in self.parent.analysis_results:
