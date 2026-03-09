@@ -435,7 +435,7 @@ class ClipExporter:
                     ], capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
                     use_gpu_mux = _gpu_available() and getattr(self.parent, 'gpu_var', None) and self.parent.gpu_var.get()
                     self._progress(25, f"Podcast Smart: Encode ({'NVENC' if use_gpu_mux else 'CPU'})...")
-                    # Pipe raw frames to ffmpeg NVENC - no OpenCV mp4v
+                    # Pipe raw frames to ffmpeg - NVENC or libx264 (no OpenCV mp4v)
                     nvenc_args = ['-c:v', 'h264_nvenc', '-preset', 'p5', '-tune', 'hq',
                         '-rc:v', 'vbr', '-cq:v', '19', '-b:v', '6M', '-maxrate', '10M', '-bufsize', '12M']
                     cpu_args = ['-c:v', 'libx264', '-preset', 'fast', '-crf', '23']
@@ -548,16 +548,10 @@ class ClipExporter:
                         crop_y = (frame_height - crop_height) // 2
                         
                         print(f"  [FACE TRACKING] Crop: {crop_width}x{crop_height} at ({crop_x}, {crop_y})")
-                        base_supports_gpu = True
-                        # Apply crop and scale - GPU or CPU
-                        if use_pure_gpu_possible and not has_heavy_filters:
-                            fc_str = (
-                                f"[0:v]crop_cuda={crop_width}:{crop_height}:{crop_x}:{crop_y},scale_cuda=1080:1920[v_mixed];"
-                            )
-                        else:
-                            fc_str = (
-                                f"[0:v]setsar=1,crop={crop_width}:{crop_height}:{crop_x}:{crop_y},scale=1080:1920[v_mixed];"
-                            )
+                        # crop has no CUDA version - use hybrid (hwdownload->crop->scale->hwupload) when GPU
+                        fc_str = (
+                            f"[0:v]setsar=1,crop={crop_width}:{crop_height}:{crop_x}:{crop_y},scale=1080:1920[v_mixed];"
+                        )
                     else:
                         # No faces detected - fallback to center crop (expressions, CPU only)
                         print("  [FACE TRACKING] No faces detected - using center crop")
@@ -1043,7 +1037,7 @@ class ClipExporter:
             # Compute encode duration for progress (used in run_ffmpeg_realtime)
             encode_dur = effective_duration if effective_video_path != str(self.parent.video_path) else duration + 0.4
 
-            if use_gpu:
+            if use_gpu_encode:
                 print("  Using NVENC GPU encoder")
                 cmd = get_ffmpeg_cmd()
                 ret_code = run_ffmpeg_realtime(cmd, "GPU-NVENC", encode_dur, encoder_label="NVENC GPU")
