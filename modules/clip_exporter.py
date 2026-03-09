@@ -961,12 +961,12 @@ class ClipExporter:
                 use_cpu = False  # Still using NVENC
                 print("  [GPU] Hybrid: NVDEC + CPU filters + NVENC")
             else:
-                # Intentional CPU fallback (heavy filters)
-                filter_complex = fc_str
-                filter_complex_cpu = fc_str
+                # Intentional CPU fallback: use minimal filter to avoid "Filter not found" on builds without zoompan/hflip/libass
+                filter_complex = minimal_fc_str
+                filter_complex_cpu = minimal_fc_str
                 use_cpu = True
                 if has_heavy_filters:
-                    print("  [CPU] Fallback: zoom/subtitle/watermark/blur/overlay require CPU filters")
+                    print("  [CPU] Fallback: menggunakan filter minimal (tanpa zoom/flip/subtitle/watermark) agar export berhasil.")
             use_gpu_encode = use_pure_gpu or (use_pure_gpu_possible and not use_cpu)
 
             def get_ffmpeg_cmd(force_cpu=False):
