@@ -20,6 +20,13 @@ except ImportError:
     OpenAI = None
     OPENAI_AVAILABLE = False
 
+try:
+    from anthropic import Anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    Anthropic = None
+    ANTHROPIC_AVAILABLE = False
+
 
 def load_openai_key():
     """Load OpenAI API key from openai.txt. Tries project root then current dir. Do not hardcode keys."""
@@ -280,12 +287,138 @@ class AIEngine:
         else:
             return 'informatif'  # default
     
+    def _get_preferred_provider(self):
+        """Return the AI provider to use: openai, gemini, anthropic, llama, deepseek, groq. None if none available."""
+        preferred = (getattr(self.parent, "preferred_ai_provider", None) or "").strip().lower()
+        providers = [
+            ("openai", lambda: self._openai_client and self.openai_available),
+            ("gemini", lambda: getattr(self.parent, "gemini_available", False) and getattr(self.parent, "gemini_client", None)),
+            ("anthropic", lambda: getattr(self.parent, "anthropic_available", False)),
+            ("llama", lambda: getattr(self.parent, "llama_available", False)),
+            ("deepseek", lambda: getattr(self.parent, "deepseek_available", False)),
+            ("groq", lambda: getattr(self.parent, "groq_available", False)),
+        ]
+        if preferred:
+            for name, available in providers:
+                if name == preferred and available():
+                    return name
+            return None
+        for name, available in providers:
+            if available():
+                return name
+        return None
+
     def _use_gemini_for_ai(self):
-        """True when user selected Gemini (or non-OpenAI) and Gemini is available."""
-        return (
-            getattr(self.parent, "gemini_available", False)
-            and (not self._openai_client or not self.openai_available)
-        )
+        """True when preferred provider is not OpenAI but another (e.g. Gemini) is available."""
+        p = self._get_preferred_provider()
+        return p is not None and p != "openai"
+
+    def _chat_completion(self, provider, user_content, system_prompt=None, max_tokens=4000):
+        """
+        Single chat completion using the given provider. Returns response text or empty string on error.
+        provider: openai | gemini | anthropic | llama | deepseek | groq
+        """
+        if not provider or not (user_content or "").strip():
+            return ""
+        user_content = (user_content or "").strip()
+        try:
+            if provider == "openai" and self._openai_client and self.openai_available:
+                messages = [{"role": "user", "content": user_content}]
+                if system_prompt:
+                    messages.insert(0, {"role": "system", "content": system_prompt})
+                r = self._openai_client.chat.completions.create(
+                    model="gpt-4o", messages=messages, temperature=0.4, max_tokens=max_tokens
+                )
+                return (r.choices[0].message.content or "").strip()
+
+            if provider == "gemini" and getattr(self.parent, "gemini_client", None):
+                contents = (system_prompt or "") + "\n\n" + user_content if system_prompt else user_content
+                response = self.parent.gemini_client.models.generate_content(
+                    model="gemini-2.0-flash", contents=contents
+                )
+                return (response.text or "").strip()
+
+            if provider == "anthropic" and getattr(self.parent, "anthropic_available", False) and ANTHROPIC_AVAILABLE and Anthropic:
+                key = self.parent.get_anthropic_key() if hasattr(self.parent, "get_anthropic_key") else None
+                if not key:
+                    return ""
+                client = Anthropic(api_key=key)
+                kwargs = {"model": "claude-3-5-sonnet-20241022", "max_tokens": max_tokens, "messages": [{"role": "user", "content": user_content}]}
+                if system_prompt:
+                    kwargs["system"] = system_prompt
+                msg = client.messages.create(**kwargs)
+                text = ""
+                if msg.content and isinstance(msg.content, list):
+                    for block in msg.content:
+                        if getattr(block, "text", None):
+                            text += block.text
+                return text.strip()
+
+            # OpenAI-compatible: Groq, DeepSeek, Llama (Groq with Llama model)
+            if provider in ("groq", "llama", "deepseek") and OPENAI_AVAILABLE and OpenAI:
+                key = None
+                base_url = None
+                model = "gpt-4o"
+                if provider == "groq" and getattr(self.parent, "groq_available", False):
+                    key = self.parent.get_groq_key() if hasattr(self.parent, "get_groq_key") else None
+                    base_url = "https://api.groq.com/openai/v1"
+                    model = "llama-3.3-70b-versatile"
+                elif provider == "llama" and getattr(self.parent, "llama_available", False):
+                    key = self.parent.get_llama_key() if hasattr(self.parent, "get_llama_key") else None
+                    base_url = "https://api.groq.com/openai/v1"
+                    model = "llama-3.3-70b-versatile"
+                elif provider == "deepseek" and getattr(self.parent, "deepseek_available", False):
+                    key = self.parent.get_deepseek_key() if hasattr(self.parent, "get_deepseek_key") else None
+                    base_url = "https://api.deepseek.com"
+                    model = "deepseek-chat"
+                if key and base_url:
+                    client = OpenAI(api_key=key, base_url=base_url)
+                    messages = [{"role": "user", "content": user_content}]
+                    if system_prompt:
+                        messages.insert(0, {"role": "system", "content": system_prompt})
+                    r = client.chat.completions.create(
+                        model=model, messages=messages, temperature=0.4, max_tokens=max_tokens
+                    )
+                    return (r.choices[0].message.content or "").strip()
+        except Exception as e:
+            print(f"[{provider.upper()}] Chat completion failed: {e}")
+        return ""
+
+    def _generate_title_with_provider(self, provider, segment_text, existing_titles=None, strict_content=False):
+        """Generate clickbait title using given provider (gemini, anthropic, llama, deepseek, groq)."""
+        if not segment_text or not provider:
+            return _title_from_transcript(segment_text)
+        prompt = """Kamu ahli YouTube Shorts untuk penonton Indonesia.
+Dari percakapan/transkrip berikut, buat SATU judul clickbait yang menarik (bukan generic).
+Aturan: BAHASA INDONESIA, maks 60 karakter, awali 1 emoji. Jangan pakai kata Gila/Parah.
+Judul harus mencerminkan isi klip. Jawab HANYA judul (tanpa tanda kutip).
+
+Percakapan:
+"""
+        prompt += (segment_text[:2000] if segment_text else "").strip()
+        if provider == "openai":
+            return _title_from_transcript(segment_text)  # OpenAI path is in generate_clickbait_title
+        text = self._chat_completion(provider, prompt, max_tokens=200)
+        title = (text or "").strip().strip('"').strip("'")
+        title = self.clean_viral_title(title) if title else ""
+        if title and len(title) >= 8 and len(title) <= 80:
+            return title[:60]
+        return _title_from_transcript(segment_text)
+
+    def _refine_hook_with_provider(self, provider, hook_text):
+        """Refine hook using given provider. Returns (refined_hook, score)."""
+        if not (hook_text or "").strip() or not provider:
+            return (hook_text or "").strip(), 50
+        prompt = f"""Perbaiki kalimat hook berikut agar lebih menarik dan singkat (max 10 kata). Bahasa Indonesia. Jawab HANYA kalimat hook saja, tanpa penjelasan.
+
+Hook: {hook_text[:500]}"""
+        if provider == "openai":
+            return (hook_text or "").strip(), 50  # OpenAI path is in refine_and_score_hook_openai
+        text = self._chat_completion(provider, prompt, max_tokens=150)
+        refined = (text or "").strip().strip('"').strip("'")
+        if refined:
+            return refined[:120], 65
+        return (hook_text or "").strip(), 50
 
     def _generate_title_gemini(self, segment_text, existing_titles=None, strict_content=False):
         """Generate clickbait title using Gemini. Used when API selected is Gemini."""
@@ -416,9 +549,10 @@ Output Format (JSON):
         existing_titles = existing_titles or []
         if not segment_text:
             return _title_from_transcript(segment_text)
-        if self._use_gemini_for_ai():
-            print("[GEMINI] Generating clickbait title")
-            return self._generate_title_gemini(segment_text, existing_titles, strict_content)
+        provider = self._get_preferred_provider()
+        if provider and provider != "openai":
+            print(f"[{provider.upper()}] Generating clickbait title")
+            return self._generate_title_with_provider(provider, segment_text, existing_titles, strict_content)
         if not self._openai_client or not self.openai_available:
             print("[OPENAI] API key not found, skipping clickbait title")
             return _title_from_transcript(segment_text)
@@ -543,13 +677,10 @@ Jawab HANYA judulnya.""".format(segment_text=(segment_text[:2000] if segment_tex
         except ValueError:
             return 0
 
-    def detect_viral_segments_with_gemini(self, transcript):
-        """
-        Use Gemini to detect viral moments from full transcript. Same output format as OpenAI.
-        """
-        if not (transcript or "").strip() or not getattr(self.parent, "gemini_client", None):
+    def _detect_viral_segments_with_provider(self, provider, transcript):
+        """Detect viral segments using any provider (gemini, anthropic, llama, deepseek, groq). Same output format as OpenAI."""
+        if not (transcript or "").strip() or not provider:
             return []
-        print("[GEMINI] Detecting viral segments")
         prompt = """You are an expert video highlight editor. Find GOLDEN MOMENTS—exciting moments, NOT setup/intro.
 
 PRIORITIZE: Conflict, controversy, debate, surprising events, strong emotions, key incidents, hot takes, dramatic reveals ("ternyata", "justru", "masalahnya").
@@ -562,26 +693,27 @@ Use transcript timestamps. VIRAL_SCORE 0-100. HOOK max 12 words. Min 10s, max 60
 Transcript:
 """
         prompt += (transcript[:80000] if transcript else "").strip()
-        try:
-            response = self.parent.gemini_client.models.generate_content(
-                model="gemini-2.0-flash", contents=prompt
-            )
-            result = (response.text or "").strip()
-            segments = self._parse_viral_segments_response(result)
-            return segments[:15]
-        except Exception as e:
-            print(f"[GEMINI] Detect viral segments failed: {e}")
+        print(f"[{provider.upper()}] Detecting viral segments")
+        result = self._chat_completion(provider, prompt, max_tokens=8000)
+        if not result:
             return []
+        segments = self._parse_viral_segments_response(result)
+        return segments[:15]
+
+    def detect_viral_segments_with_gemini(self, transcript):
+        """Use Gemini to detect viral moments. Kept for backward compat; prefer _detect_viral_segments_with_provider."""
+        return self._detect_viral_segments_with_provider("gemini", transcript)
 
     def detect_viral_segments_with_openai(self, transcript, _retry=0):
         """
-        Use selected AI (OpenAI or Gemini) to detect viral moments from full transcript.
+        Use selected AI (OpenAI, Gemini, Anthropic, Llama, DeepSeek, Groq) to detect viral moments from full transcript.
         Returns list of dicts: [{"start": sec, "end": sec, "viral_score": 0-100, "hook": str}, ...]
         """
         if not (transcript or "").strip():
             return []
-        if self._use_gemini_for_ai():
-            return self.detect_viral_segments_with_gemini(transcript)
+        provider = self._get_preferred_provider()
+        if provider and provider != "openai":
+            return self._detect_viral_segments_with_provider(provider, transcript)
         if not self._openai_client or not self.openai_available:
             print("[OPENAI] API key not found, skipping viral segment detection")
             return []
@@ -767,50 +899,50 @@ Transcript:
                 order.append(i)
         return [segments[i] for i in order] if order else segments
 
-    def rank_segments_with_gemini(self, segments):
-        """Use Gemini to rank segments by virality. Returns segments in ranked order."""
-        if not segments or not getattr(self.parent, "gemini_client", None):
+    def _rank_segments_with_provider(self, provider, segments):
+        """Rank segments by virality using any provider (gemini, anthropic, llama, deepseek, groq)."""
+        if not segments or not provider:
             return segments
-        print("[GEMINI] Ranking segments")
-        try:
-            prompt_body = self._build_segment_prompt(segments)
-            prompt = f"""Segments:
+        prompt_body = self._build_segment_prompt(segments)
+        prompt = f"""Segments:
 
 {prompt_body}
 
 You are an expert short-form video editor. Select the most viral moments (shocking statements, emotional reactions, controversy, surprising stories). Return the top 10 clips ranked by virality. Reply with segment numbers only, one per line (e.g. 3, 1, 0, 5, 2, ...). Use the segment index (1-based) from the list above."""
-            response = self.parent.gemini_client.models.generate_content(
-                model="gemini-2.0-flash", contents=prompt
-            )
-            result = (response.text or "").strip()
-            order, seen = [], set()
-            for line in result.strip().split("\n"):
-                for part in line.replace(",", " ").split():
-                    try:
-                        num = int(part)
-                        idx = num - 1
-                        if 0 <= idx < len(segments) and idx not in seen:
-                            order.append(idx)
-                            seen.add(idx)
-                    except ValueError:
-                        continue
-            for i in range(len(segments)):
-                if i not in seen:
-                    order.append(i)
-            return [segments[i] for i in order] if order else segments
-        except Exception as e:
-            print(f"[GEMINI] Ranking failed: {e}, using original order")
+        print(f"[{provider.upper()}] Ranking segments")
+        result = self._chat_completion(provider, prompt, max_tokens=500)
+        if not result:
             return segments
+        order, seen = [], set()
+        for line in result.strip().split("\n"):
+            for part in line.replace(",", " ").split():
+                try:
+                    num = int(part)
+                    idx = num - 1
+                    if 0 <= idx < len(segments) and idx not in seen:
+                        order.append(idx)
+                        seen.add(idx)
+                except ValueError:
+                    continue
+        for i in range(len(segments)):
+            if i not in seen:
+                order.append(i)
+        return [segments[i] for i in order] if order else segments
+
+    def rank_segments_with_gemini(self, segments):
+        """Use Gemini to rank segments. Kept for backward compat."""
+        return self._rank_segments_with_provider("gemini", segments)
 
     def rank_segments_with_openai(self, segments, _retry=0):
         """
-        Use selected AI (OpenAI or Gemini) to rank the most viral segments.
+        Use selected AI (OpenAI, Gemini, Anthropic, Llama, DeepSeek, Groq) to rank the most viral segments.
         Returns segments in ranked order.
         """
         if not segments:
             return segments
-        if self._use_gemini_for_ai():
-            return self.rank_segments_with_gemini(segments)
+        provider = self._get_preferred_provider()
+        if provider and provider != "openai":
+            return self._rank_segments_with_provider(provider, segments)
         if not self._openai_client or not self.openai_available:
             print("[OPENAI] API key not found, skipping ranking")
             return segments
@@ -1057,8 +1189,9 @@ Hook: """ + (hook_text or "").strip()[:300]
         """
         if not (hook_text or "").strip():
             return "", 0
-        if self._use_gemini_for_ai():
-            return self._refine_hook_gemini(hook_text)
+        provider = self._get_preferred_provider()
+        if provider and provider != "openai":
+            return self._refine_hook_with_provider(provider, hook_text)
         best_hook = (hook_text or "").strip()
         best_score = 0
         for _ in range(max_attempts):

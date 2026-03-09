@@ -108,6 +108,11 @@ class WebAppContext:
         self.openai_available = False
         self.gemini_keys = []
         self.current_transcript_path = None
+        # All AI providers (only the selected one is used for analysis)
+        self.anthropic_available = False
+        self.llama_available = False
+        self.deepseek_available = False
+        self.groq_available = False
 
         # Load config (never crash export)
         try:
@@ -115,12 +120,22 @@ class WebAppContext:
         except Exception as e:
             print(f"[WebAppContext] _load_config failed: {e}")
         # When user selected an API provider for this run, only that provider is "available"
-        if self.preferred_ai_provider:
-            if self.preferred_ai_provider != "openai":
-                self.openai_available = False
-            if self.preferred_ai_provider != "gemini":
-                self.gemini_available = False
+        preferred = (self.preferred_ai_provider or "").strip().lower()
+        if preferred:
+            self.openai_available = preferred == "openai" and bool(self.api_keys.get("openai"))
+            self.gemini_available = preferred == "gemini" and bool(self.api_keys.get("gemini"))
+            self.anthropic_available = preferred == "anthropic" and bool(self.api_keys.get("anthropic"))
+            self.llama_available = preferred == "llama" and bool(self.api_keys.get("llama"))
+            self.deepseek_available = preferred == "deepseek" and bool(self.api_keys.get("deepseek"))
+            self.groq_available = preferred == "groq" and bool(self.api_keys.get("groq"))
+            if preferred != "gemini":
                 self.gemini_client = None
+        else:
+            # No preference: all with keys are available; AIEngine will use OpenAI if present
+            self.anthropic_available = bool(self.api_keys.get("anthropic"))
+            self.llama_available = bool(self.api_keys.get("llama"))
+            self.deepseek_available = bool(self.api_keys.get("deepseek"))
+            self.groq_available = bool(self.api_keys.get("groq"))
         try:
             self._init_modules()
         except Exception as e:
@@ -385,6 +400,28 @@ class WebAppContext:
             idx = 0
             self.api_key_state["openai_idx"] = 0
         return keys[idx]
+
+    def _get_provider_key(self, provider: str) -> str | None:
+        keys = self.api_keys.get(provider) or []
+        if not keys:
+            return None
+        key_name = provider + "_idx"
+        idx = int(self.api_key_state.get(key_name, 0) or 0)
+        if idx >= len(keys):
+            idx = 0
+        return keys[idx]
+
+    def get_anthropic_key(self) -> str | None:
+        return self._get_provider_key("anthropic")
+
+    def get_groq_key(self) -> str | None:
+        return self._get_provider_key("groq")
+
+    def get_deepseek_key(self) -> str | None:
+        return self._get_provider_key("deepseek")
+
+    def get_llama_key(self) -> str | None:
+        return self._get_provider_key("llama")
 
     def rotate_openai_api_key(self) -> bool:
         """Rotate OpenAI key only when called on error."""
