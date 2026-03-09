@@ -1412,11 +1412,12 @@ class AISegmentAnalyzer:
 
         # [MOMENT-FIRST] Fallback when Opus returns none
         if not openai_segments and getattr(self.parent, "sub_transcriptions", None) and self.parent.sub_transcriptions:
+            cue_list = self._build_subtitle_cues_from_parent()
             moments = self._detect_hook_moments()
             print(f"  [MOMENT] Detected {len(moments)} hook moments")
 
             for hook_start, hook_end, text, base_score in moments:
-                clip_start, clip_end = self._build_clip_around_hook(hook_start, hook_end, duration_sec)
+                clip_start, clip_end = self._build_clip_around_hook(hook_start, hook_end, duration_sec, cues=cue_list)
                 dur = clip_end - clip_start
                 if dur < self.CLIP_MIN_DURATION_SEC:
                     continue
@@ -1449,7 +1450,7 @@ class AISegmentAnalyzer:
                 viral_score = min(100, rule_score + sem_score + emo_score)
                 if viral_score < 3:
                     continue
-                clip_start, clip_end = self._build_clip_around_hook(start_sec, end_sec, duration_sec)
+                clip_start, clip_end = self._build_clip_around_hook(start_sec, end_sec, duration_sec, cues=cue_list)
                 dur = clip_end - clip_start
                 if dur >= self.CLIP_MIN_DURATION_SEC:
                     openai_segments.append({
