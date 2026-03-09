@@ -944,7 +944,8 @@ class ClipExporter:
                 else:
                     base_cmd.extend([
                         '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
-                        '-maxrate', '8M', '-ar', '48000', str(output_path)
+                        '-maxrate', '8M', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
+                        str(output_path)
                     ])
                 return base_cmd
 
