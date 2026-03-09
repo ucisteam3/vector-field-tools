@@ -30,12 +30,14 @@ export default function ProjectPage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<{ status: string; progress?: string } | null>(null);
   const [playingClip, setPlayingClip] = useState<number | null>(null);
+  const [clipReadyToPlay, setClipReadyToPlay] = useState<number | null>(null);
   const [blobCache, setBlobCache] = useState<Record<number, string>>({});
   const [downloading, setDownloading] = useState<Set<number>>(new Set());
   const [exportProgress, setExportProgress] = useState<{ progress: number; message: string; logs?: string[] } | null>(null);
   const [reanalyzing, setReanalyzing] = useState(false);
   const blobCacheRef = useRef<Record<number, string>>({});
   blobCacheRef.current = blobCache;
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const loadProject = async () => {
     try {
@@ -73,6 +75,7 @@ export default function ProjectPage() {
     const clip = project?.clips?.[index];
     if (!clip) return;
     setPlayingClip(index);
+    setClipReadyToPlay(null);
     if (blobCache[index]) return;
     try {
       const blobUrl = await fetchPreviewAsBlobUrl(id, index);
@@ -80,6 +83,16 @@ export default function ProjectPage() {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const handleVideoCanPlay = (index: number) => {
+    setClipReadyToPlay(index);
+    videoRef.current?.play().catch(() => {});
+  };
+
+  const handleClipEnded = () => {
+    setPlayingClip(null);
+    setClipReadyToPlay(null);
   };
 
   const handleDownload = async (e: React.MouseEvent, index: number) => {
@@ -226,14 +239,25 @@ export default function ProjectPage() {
                 >
                   <div className="relative aspect-[9/16] bg-zinc-900">
                     {playingClip === i && blobCache[i] ? (
-                      <video
-                        src={blobCache[i]}
-                        autoPlay
-                        controls
-                        playsInline
-                        className="w-full h-full object-cover"
-                        onEnded={() => setPlayingClip(null)}
-                      />
+                      <>
+                        <video
+                          ref={playingClip === i ? videoRef : undefined}
+                          src={blobCache[i]}
+                          preload="auto"
+                          controls
+                          playsInline
+                          className="w-full h-full object-cover"
+                          onCanPlay={() => handleVideoCanPlay(i)}
+                          onEnded={handleClipEnded}
+                          style={{ opacity: clipReadyToPlay === i ? 1 : 0 }}
+                        />
+                        {clipReadyToPlay !== i && (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70">
+                            <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
+                            <span className="text-xs text-zinc-400">Buffering...</span>
+                          </div>
+                        )}
+                      </>
                     ) : playingClip === i ? (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/60">
                         <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
