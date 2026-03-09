@@ -184,7 +184,7 @@ def find_sentence_start_before(timestamp: float, cues: List[SubtitleCue], max_lo
 
 
 def refine_segment_start_hook_first(hook_timestamp: float, segment_end: float, cues: List[SubtitleCue],
-                                    pre_roll_sec: float = 2.0, max_shift: float = REFINE_START_MAX_SHIFT_SEC) -> float:
+                                    pre_roll_sec: float = 2.0, max_shift: float = 6.0) -> float:
     """
     Hook-first clip start: start slightly before the hook (e.g. hook - 2s).
     If that falls mid-sentence, shift start to the beginning of that sentence.
