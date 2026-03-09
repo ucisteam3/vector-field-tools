@@ -84,6 +84,17 @@ def _gpu_available() -> bool:
         return False
 
 
+def _safe_messagebox(kind, title, message):
+    """Show messagebox only when GUI is available (desktop). In web/headless, just print to avoid crash."""
+    try:
+        if kind == "error" and hasattr(messagebox, "showerror"):
+            messagebox.showerror(title, message)
+        elif kind == "info" and hasattr(messagebox, "showinfo"):
+            messagebox.showinfo(title, message)
+    except Exception:
+        print(f"  [{title}] {message}")
+
+
 class ClipExporter:
     """Manages clip export operations including download, encoding, and voiceover.
     Backend-safe: works with WebAppContext via safe_parent_call."""
@@ -224,10 +235,7 @@ class ClipExporter:
         """Download a single clip using ffmpeg with high quality re-encoding"""
         self._progress(0, "Memulai export...")
         if not self.parent or not getattr(self.parent, "video_path", None):
-            if hasattr(messagebox, "showerror"):
-                messagebox.showerror("Error", "Video belum diunduh!")
-            else:
-                print("  [ERROR] Video belum diunduh!")
+            _safe_messagebox("error", "Error", "Video belum diunduh!")
             return False
 
         # [INSTANT START] Leading silence detection disabled to avoid export pipeline crashes
@@ -266,11 +274,8 @@ class ClipExporter:
                 subprocess.run(['ffmpeg', '-version'], 
                              capture_output=True, check=True, creationflags=0x08000000)
             except (subprocess.CalledProcessError, FileNotFoundError):
-                messagebox.showerror(
-                    "Kesalahan", 
-                    "FFmpeg tidak ditemukan. Silakan instal FFmpeg dan tambahkan ke PATH.\n"
-                    "Jalankan install_ffmpeg.bat untuk instruksi."
-                )
+                _safe_messagebox("error", "Kesalahan",
+                    "FFmpeg tidak ditemukan. Silakan instal FFmpeg dan tambahkan ke PATH.")
                 return False
             
             # Voice Over Hook Logic
