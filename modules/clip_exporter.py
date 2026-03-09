@@ -1128,8 +1128,8 @@ class ClipExporter:
                 if clip_num is None:
                     _safe_messagebox("info", "Berhasil", f"Klip berhasil diekspor (CPU):\n{output_filename}")
                 return True
-            # Retry with minimal video-only (mode 9:16, no zoom/flip/subtitle/watermark), audio -map 0:a
-            print(f"  [CPU] Filter not found? Mencoba export minimal (mode 9:16, tanpa zoom/subtitle/watermark)...")
+            # Retry 1: minimal video-only (mode 9:16, setsar/crop/scale/pad), audio -map 0:a
+            print(f"  [CPU] Filter not found? Mencoba export minimal (mode 9:16)...")
             filter_complex = minimal_fc_str_video_only
             filter_complex_cpu = minimal_fc_str_video_only
             cmd_min = get_ffmpeg_cmd()
@@ -1139,6 +1139,18 @@ class ClipExporter:
                 print(f"  [SUCCESS] Klip {clip_num or ''} berhasil diekspor (CPU, filter minimal)")
                 if clip_num is None:
                     _safe_messagebox("info", "Berhasil", f"Klip berhasil diekspor (tanpa zoom/subtitle/watermark):\n{output_filename}")
+                return True
+            # Retry 2: ultra-minimal — HANYA scale (tanpa setsar/crop/pad), pasti jalan di semua FFmpeg
+            print(f"  [CPU] Filter not found lagi. Mencoba ultra-minimal (hanya scale 9:16)...")
+            filter_complex = ultra_minimal_fc
+            filter_complex_cpu = ultra_minimal_fc
+            cmd_ultra = get_ffmpeg_cmd()
+            ret_ultra = run_ffmpeg_realtime(cmd_ultra, "CPU-x264-ultra-minimal", encode_dur, encoder_label="libx264 CPU")
+            if ret_ultra == 0:
+                self._progress(100, "Selesai (ultra-minimal)")
+                print(f"  [SUCCESS] Klip {clip_num or ''} berhasil diekspor (hanya scale 9:16)")
+                if clip_num is None:
+                    _safe_messagebox("info", "Berhasil", f"Klip berhasil diekspor (mode ultra-minimal 9:16):\n{output_filename}")
                 return True
             print(f"  [ERROR] Ekspor gagal total.")
             if clip_num is None:
