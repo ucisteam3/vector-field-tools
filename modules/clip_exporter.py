@@ -939,6 +939,9 @@ class ClipExporter:
                 fc_str += f"{audio_filter}[a_pitch_in];[a_pitch_in]asetrate={rate_in:.0f},aresample=48000[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
             else:
                 fc_str += f"{audio_filter}[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
+            
+            # Minimal filter (base video + audio only) for "Filter not found" retry
+            minimal_fc_str = base_fc_str + base_last_v_label + "[v_out];" + audio_filter + "[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
                 
             # GPU vs CPU pipeline
             use_pure_gpu = use_pure_gpu_possible and not has_heavy_filters and base_supports_gpu
@@ -1105,6 +1108,18 @@ class ClipExporter:
                 print(f"  [SUCCESS] Klip {clip_num or ''} berhasil diekspor (CPU)")
                 if clip_num is None:
                     _safe_messagebox("info", "Berhasil", f"Klip berhasil diekspor (CPU):\n{output_filename}")
+                return True
+            # Retry with minimal filter (no zoom/flip/subtitle/watermark) when "Filter not found"
+            print(f"  [CPU] Filter not found? Mencoba export minimal (tanpa zoom/flip/subtitle/watermark)...")
+            filter_complex = minimal_fc_str
+            filter_complex_cpu = minimal_fc_str
+            cmd_min = get_ffmpeg_cmd()
+            ret_min = run_ffmpeg_realtime(cmd_min, "CPU-x264-minimal", encode_dur, encoder_label="libx264 CPU")
+            if ret_min == 0:
+                self._progress(100, "Selesai (CPU minimal)")
+                print(f"  [SUCCESS] Klip {clip_num or ''} berhasil diekspor (CPU, filter minimal)")
+                if clip_num is None:
+                    _safe_messagebox("info", "Berhasil", f"Klip berhasil diekspor (tanpa zoom/subtitle/watermark):\n{output_filename}")
                 return True
             print(f"  [ERROR] Ekspor gagal total.")
             if clip_num is None:
