@@ -4,7 +4,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND = "http://127.0.0.1:8000";
+const BACKEND = "http://127.0.0.1:8001";
 
 export async function GET(req: NextRequest) {
   const project = req.nextUrl.searchParams.get("project");

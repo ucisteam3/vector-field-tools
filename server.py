@@ -20,6 +20,7 @@ import uvicorn
 from backend.server import app
 
 if __name__ == "__main__":
-    print("Starting AI Video Clipper API at http://localhost:8000")
+    port = int(os.environ.get("PORT", 8001))
+    print(f"Starting AI Video Clipper API at http://localhost:{port}")
     print("Frontend: cd frontend && npm run dev  (then open http://localhost:3000)")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=port)
