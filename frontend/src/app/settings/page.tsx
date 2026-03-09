@@ -38,7 +38,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useAppSettings();
   const [showSavedModal, setShowSavedModal] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [openExport, setOpenExport] = useState(true);
+  const [openExport, setOpenExport] = useState(false);
   const [openKeys, setOpenKeys] = useState(false);
 
   useEffect(() => setMounted(true), []);
