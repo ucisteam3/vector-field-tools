@@ -544,6 +544,12 @@ def export_clip_status(job_id: str):
     return job
 
 
+@app.get("/job_status/{job_id}")
+def job_status(job_id: str):
+    """Alias for export progress. Returns same as GET /export_clip_status?job_id=."""
+    return export_clip_status(job_id)
+
+
 # Upload directories
 BGM_UPLOAD_DIR = PROJECT_ROOT / "temp" / "bgm_uploads"
 WATERMARK_UPLOAD_DIR = PROJECT_ROOT / "temp" / "watermark_uploads"
