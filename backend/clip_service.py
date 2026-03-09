@@ -7,7 +7,7 @@ Parallel export via ThreadPoolExecutor (max_workers = min(4, cpu_count)) for bat
 import os
 from pathlib import Path
 from typing import Optional
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -171,7 +171,7 @@ def _export_one_clip(args) -> tuple[int, Optional[str]]:
 
 def export_all_clips(project_id: str, settings: Optional[dict] = None, on_progress=None) -> list[str]:
     """Export all clips for a project. Returns list of clip filenames.
-    Uses ThreadPoolExecutor for parallel export (max 4 workers) when multiple clips.
+    Uses ThreadPoolExecutor for parallel export (max_workers = min(4, cpu_count)).
     on_progress(completed_count, total) called as each clip finishes.
     """
     from backend.project_manager import get_project
@@ -186,7 +186,7 @@ def export_all_clips(project_id: str, settings: Optional[dict] = None, on_progre
         return []
 
     max_workers = min(4, os.cpu_count() or 4)
-    results = [None] * total  # index -> filename
+    results = [None] * total
 
     if total == 1:
         fn = export_clip(project_id, 0, merged if merged else None)
