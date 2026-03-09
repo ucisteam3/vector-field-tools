@@ -84,6 +84,26 @@ def _gpu_available() -> bool:
         return False
 
 
+_ffmpeg_filters_cache = None
+
+def _ffmpeg_has_filters(*names: str) -> dict:
+    """Check which of the given filter names exist in this FFmpeg build. Returns dict name -> bool."""
+    global _ffmpeg_filters_cache
+    if _ffmpeg_filters_cache is None:
+        try:
+            r = subprocess.run(
+                ["ffmpeg", "-filters"],
+                capture_output=True, text=True, timeout=10,
+                creationflags=0x08000000 if os.name == "nt" else 0
+            )
+            out = (r.stdout or "") + (r.stderr or "")
+            _ffmpeg_filters_cache = out.lower()
+        except Exception:
+            _ffmpeg_filters_cache = ""
+    out = _ffmpeg_filters_cache
+    return {n: f" {n.lower()} " in out or f". {n.lower()}" in out for n in names}
+
+
 def _safe_messagebox(kind, title, message):
     """Show messagebox only when GUI is available (desktop). In web/headless, just print to avoid crash."""
     try:
@@ -578,8 +598,10 @@ class ClipExporter:
                         f"[bg_v][fg_v]overlay=(W-w)/2:(H-h)/2[v_mixed];"
                     )
             
-            # --- DYNAMIC ZOOM (Ken Burns style) - applied BEFORE subtitles/watermark (d=2 = stable timing) ---
-            zoom_enabled = self.parent.custom_settings.get("dynamic_zoom_enabled", False)
+            # --- Check FFmpeg filter availability (avoid "Filter not found" on minimal builds) ---
+            _has = _ffmpeg_has_filters("subtitles", "drawtext", "zoompan")
+            # --- DYNAMIC ZOOM (skip if FFmpeg has no 'zoompan') ---
+            zoom_enabled = self.parent.custom_settings.get("dynamic_zoom_enabled", False) and _has.get("zoompan", True)
             if zoom_enabled:
                 zoom_strength = float(self.parent.custom_settings.get("dynamic_zoom_strength", 1.55))
                 zoom_speed = float(self.parent.custom_settings.get("dynamic_zoom_speed", 0.0032))
@@ -598,16 +620,18 @@ class ClipExporter:
                 fc_str += f"{last_v_label}hflip[v_flipped];"
                 last_v_label = "[v_flipped]"
             
-            # --- SUBTITLE OVERLAY (after zoom, before watermark) ---
-            if ass_path:
+            # --- SUBTITLE OVERLAY (skip if FFmpeg build has no 'subtitles' filter, e.g. no libass) ---
+            _has = _ffmpeg_has_filters("subtitles", "drawtext", "zoompan")
+            if ass_path and _has.get("subtitles", True):
                 safe_ass_path = str(ass_path).replace("\\", "/").replace(":", "\\:")
-                # [FIX] Point FFmpeg to local fonts directory
                 fonts_dir = str(Path("assets/fonts").resolve()).replace("\\", "/").replace(":", "\\:")
                 fc_str += f"{last_v_label}subtitles='{safe_ass_path}':fontsdir='{fonts_dir}'[v_sub];"
                 last_v_label = "[v_sub]"
+            elif ass_path and not _has.get("subtitles", True):
+                print("  [EXPORT] Skipping subtitles (FFmpeg filter 'subtitles' not in this build).")
             
-            # --- WATERMARK LOGIC ---
-            if self.parent.custom_settings.get("watermark_enabled"):
+            # --- WATERMARK LOGIC (skip if FFmpeg has no 'drawtext') ---
+            if self.parent.custom_settings.get("watermark_enabled") and _has.get("drawtext", True):
                 try:
                     wm_type = self.parent.custom_settings.get("watermark_type", "text")
                     wm_pos_x_pct = self.parent.custom_settings.get("watermark_pos_x", 50)
