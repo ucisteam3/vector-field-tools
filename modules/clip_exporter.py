@@ -1116,10 +1116,10 @@ class ClipExporter:
                 if clip_num is None:
                     _safe_messagebox("info", "Berhasil", f"Klip berhasil diekspor (CPU):\n{output_filename}")
                 return True
-            # Retry with minimal filter (no zoom/flip/subtitle/watermark) when "Filter not found"
-            print(f"  [CPU] Filter not found? Mencoba export minimal (tanpa zoom/flip/subtitle/watermark)...")
-            filter_complex = minimal_fc_str
-            filter_complex_cpu = minimal_fc_str
+            # Retry with minimal video-only (mode 9:16, no zoom/flip/subtitle/watermark), audio -map 0:a
+            print(f"  [CPU] Filter not found? Mencoba export minimal (mode 9:16, tanpa zoom/subtitle/watermark)...")
+            filter_complex = minimal_fc_str_video_only
+            filter_complex_cpu = minimal_fc_str_video_only
             cmd_min = get_ffmpeg_cmd()
             ret_min = run_ffmpeg_realtime(cmd_min, "CPU-x264-minimal", encode_dur, encoder_label="libx264 CPU")
             if ret_min == 0:
