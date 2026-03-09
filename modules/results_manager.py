@@ -31,11 +31,12 @@ class ResultsManager:
     
     
     def update_results_ui(self):
-        """Update the results treeview with analysis results, statistik, dan rekomendasi"""
-        # Clear existing items
-        for item in self.parent.results_tree.get_children():
-            self.parent.results_tree.delete(item)
-        
+        """Update the results treeview with analysis results, statistik, dan rekomendasi (no-op when headless)."""
+        tree = getattr(self.parent, "results_tree", None)
+        if tree is None:
+            return
+        for item in tree.get_children():
+            tree.delete(item)
         results = self.parent.analysis_results
         if not results:
             if getattr(self.parent, 'stats_total_label', None):
@@ -93,7 +94,7 @@ class ResultsManager:
             if score_val is None:
                 score_val = result.get('viral_score', result.get('virality_score', 0))
             score_str = str(int(score_val)) if isinstance(score_val, (int, float)) else '0'
-            self.parent.results_tree.insert("", tk.END, values=(
+            tree.insert("", END, values=(
                 "[ ]",
                 start_str,
                 end_str,
@@ -105,47 +106,51 @@ class ResultsManager:
 
 
     def on_tree_click(self, event):
-        """Handle clicks on the treeview, specifically for the checkbox column"""
-        region = self.parent.results_tree.identify_region(event.x, event.y)
+        """Handle clicks on the treeview, specifically for the checkbox column (no-op when headless)."""
+        tree = getattr(self.parent, "results_tree", None)
+        if tree is None:
+            return
+        region = tree.identify_region(event.x, event.y)
         if region == "heading":
-            column = self.parent.results_tree.identify_column(event.x)
-            if column == "#1":  # Select column header
-                # Toggle all based on current state of first item
-                items = self.parent.results_tree.get_children()
-                if not items: return
-                
-                first_val = self.parent.results_tree.item(items[0])['values'][0]
+            column = tree.identify_column(event.x)
+            if column == "#1":
+                items = tree.get_children()
+                if not items:
+                    return
+                first_val = tree.item(items[0])["values"][0]
                 new_val = "[ ]" if first_val == "[X]" else "[X]"
-                
                 for item in items:
-                    vals = list(self.parent.results_tree.item(item)['values'])
+                    vals = list(tree.item(item)["values"])
                     vals[0] = new_val
-                    self.parent.results_tree.item(item, values=vals)
-        
+                    tree.item(item, values=vals)
         elif region == "cell":
-            column = self.parent.results_tree.identify_column(event.x)
-            item = self.parent.results_tree.identify_row(event.y)
-            
-            if column == "#1":  # Select column
-                vals = list(self.parent.results_tree.item(item)['values'])
+            column = tree.identify_column(event.x)
+            item = tree.identify_row(event.y)
+            if column == "#1":
+                vals = list(tree.item(item)["values"])
                 vals[0] = "[X]" if vals[0] == "[ ]" else "[ ]"
-                self.parent.results_tree.item(item, values=vals)
+                tree.item(item, values=vals)
 
 
     def select_all_segments(self):
-        """Check all items in the treeview"""
-        for item in self.parent.results_tree.get_children():
-            vals = list(self.parent.results_tree.item(item)['values'])
+        """Check all items in the treeview (no-op when headless)."""
+        tree = getattr(self.parent, "results_tree", None)
+        if tree is None:
+            return
+        for item in tree.get_children():
+            vals = list(tree.item(item)["values"])
             vals[0] = "[X]"
-            self.parent.results_tree.item(item, values=vals)
-
+            tree.item(item, values=vals)
 
     def deselect_all_segments(self):
-        """Uncheck all items in the treeview"""
-        for item in self.parent.results_tree.get_children():
-            vals = list(self.parent.results_tree.item(item)['values'])
+        """Uncheck all items in the treeview (no-op when headless)."""
+        tree = getattr(self.parent, "results_tree", None)
+        if tree is None:
+            return
+        for item in tree.get_children():
+            vals = list(tree.item(item)["values"])
             vals[0] = "[ ]"
-            self.parent.results_tree.item(item, values=vals)
+            tree.item(item, values=vals)
 
     
     def on_segment_select(self, event):
