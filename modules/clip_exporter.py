@@ -9,8 +9,6 @@ import asyncio
 import sys
 import time
 import threading
-import tkinter as tk
-from tkinter import messagebox
 from pathlib import Path
 
 # Local temp directory for this app
@@ -132,14 +130,8 @@ def append_filter(fc: str, chain: str) -> str:
 
 
 def _safe_messagebox(kind, title, message):
-    """Show messagebox only when GUI is available (desktop). In web/headless, just print to avoid crash."""
-    try:
-        if kind == "error" and hasattr(messagebox, "showerror"):
-            messagebox.showerror(title, message)
-        elif kind == "info" and hasattr(messagebox, "showinfo"):
-            messagebox.showinfo(title, message)
-    except Exception:
-        print(f"  [{title}] {message}")
+    """Web/headless: no GUI. Just log. Desktop could inject a real messagebox if needed."""
+    print(f"  [{title}] {message}")
 
 
 class ClipExporter:

@@ -4,10 +4,18 @@ Handles the main video analysis workflow orchestration
 """
 
 import os
-import tkinter as tk
-from tkinter import messagebox
 import json
 import traceback
+
+# Headless: no GUI. Stub for any messagebox use (e.g. in local-video flow).
+class _MessageboxStub:
+    def askyesno(self, *a, **k):
+        return True
+    def showerror(self, *a, **k):
+        pass
+    def showinfo(self, *a, **k):
+        pass
+messagebox = _MessageboxStub()
 
 try:
     from modules.transcription_engine import WHISPER_AVAILABLE
