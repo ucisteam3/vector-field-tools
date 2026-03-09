@@ -430,18 +430,23 @@ class ClipExporter:
             effective_start = result['start']
             effective_duration = duration
             if export_mode == "podcast_smart" and PODCAST_SMART_AVAILABLE:
-                # Face/tracker-based crop disabled: unstable and slow. Use center crop via FFmpeg.
-                crop_boxes = None
-                if crop_boxes is not None:
-                    self._progress(5, "Podcast Smart: Menganalisis active speaker...")
-                    print("  [PODCAST SMART] Active speaker mode - analyzing and cropping...")
+                self._progress(5, "Podcast Smart: 1 FPS analysis...")
+                print("  [PODCAST SMART] Active speaker (1 FPS) - analyzing...")
+                try:
+                    tracker = PodcastSmartTracker(smoothing_factor=0.15, face_margin=1.4)
+                    crop_boxes = tracker.analyze_video(
+                        str(self.parent.video_path),
+                        start_time=result['start'],
+                        duration=duration,
+                        sample_rate=5,
+                    )
+                    tracker.close()
                     pad_start = max(0, result['start'] - 0.2)
                     pad_end = result['start'] + duration + 0.2
                     pad_dur = pad_end - pad_start
                     temp_full = Path(LOCAL_TEMP_DIR) / f"podcast_full_{int(time.time())}.mp4"
                     temp_audio = Path(LOCAL_TEMP_DIR) / f"podcast_audio_{int(time.time())}.m4a"
                     Path(LOCAL_TEMP_DIR).mkdir(parents=True, exist_ok=True)
-                    # Extract audio: -ss -t BEFORE -i for clip-first (fast)
                     subprocess.run([
                         'ffmpeg', '-y', '-ss', str(pad_start), '-t', str(pad_dur),
                         '-i', str(self.parent.video_path),
@@ -449,11 +454,8 @@ class ClipExporter:
                         str(temp_audio)
                     ], capture_output=True, creationflags=0x08000000 if os.name == "nt" else 0)
                     use_gpu_mux = _gpu_available() and getattr(self.parent, 'gpu_var', None) and self.parent.gpu_var.get()
-                    self._progress(15, "Podcast Smart: Decode clip + crop (FFmpeg)...")
-                    # FFmpeg decode: -ss -t BEFORE -i = only process clip segment (no full-video decode)
+                    self._progress(15, "Podcast Smart: Decode + crop...")
                     src_w, src_h, fps = _get_video_info(str(self.parent.video_path))
-                    sample_rate = 5  # crop_boxes per second from tracker
-                    frames_per_box = max(1, int(fps / sample_rate))
                     decode_cmd = [
                         'ffmpeg', '-y', '-ss', str(pad_start), '-t', str(pad_dur),
                         '-i', str(self.parent.video_path),
@@ -481,7 +483,7 @@ class ClipExporter:
                         creationflags=0x08000000 if os.name == "nt" else 0
                     )
                     frame_size = src_w * src_h * 3
-                    total_frames = len(crop_boxes) * frames_per_box
+                    total_frames = len(crop_boxes)
                     frame_idx = 0
                     try:
                         while frame_idx < total_frames:
@@ -489,7 +491,7 @@ class ClipExporter:
                             if len(raw) < frame_size:
                                 break
                             frame = np.frombuffer(raw, dtype=np.uint8).reshape((src_h, src_w, 3))
-                            box_idx = min(frame_idx // frames_per_box, len(crop_boxes) - 1)
+                            box_idx = min(frame_idx, len(crop_boxes) - 1)
                             x, y, cw, ch = (int(v) for v in crop_boxes[box_idx])
                             if cw > 0 and ch > 0:
                                 cropped = frame[y:y+ch, x:x+cw]
@@ -515,8 +517,8 @@ class ClipExporter:
                         temp_audio.unlink(missing_ok=True)
                     except Exception:
                         pass
-                else:
-                    print("  [PODCAST SMART] Using center crop (tracking disabled)")
+                except Exception as e:
+                    print(f"  [PODCAST SMART ERROR] {e} - falling back to center crop")
 
             # Use effective video path for inputs (podcast_smart replaces with pre-cropped temp)
             if input_args[0] == '-i':
