@@ -186,6 +186,32 @@ export async function getFonts(): Promise<string[]> {
   return res.json();
 }
 
+export type ApiKeysPayload = {
+  openai: string[];
+  gemini: string[];
+  anthropic: string[];
+  llama: string[];
+  deepseek: string[];
+  groq: string[];
+  rotate_on_error: Record<string, boolean>;
+};
+
+export async function getApiKeys(): Promise<ApiKeysPayload> {
+  const res = await fetch(`${API}/settings/api_keys`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function saveApiKeys(payload: ApiKeysPayload): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API}/settings/api_keys`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export type Clip = {
   id?: number;
   start: number;

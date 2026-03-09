@@ -343,7 +343,7 @@ Output Format (JSON):
                 return True
         return False
 
-    def generate_clickbait_title(self, segment_text, existing_titles=None, max_attempts=5, strict_content=False):
+    def generate_clickbait_title(self, segment_text, existing_titles=None, max_attempts=5, strict_content=False, _retry=0):
         """
         Selalu minta OpenAI buat judul clickbait dari percakapan/transkrip.
         Judul harus dari OpenAI; jika respons Inggris, minta terjemah ke Indonesia.
@@ -429,6 +429,8 @@ Jawab HANYA judulnya.""".format(segment_text=(segment_text[:2000] if segment_tex
                     continue
                 return title[:60]
             except Exception as e:
+                if self._maybe_rotate_openai_on_error(e) and _retry < 1:
+                    return self.generate_clickbait_title(segment_text, existing_titles, max_attempts, strict_content, _retry=_retry + 1)
                 if attempt < max_attempts - 1:
                     continue
                 print(f"[OPENAI] Clickbait title failed: {e}")
@@ -475,7 +477,7 @@ Jawab HANYA judulnya.""".format(segment_text=(segment_text[:2000] if segment_tex
         except ValueError:
             return 0
 
-    def detect_viral_segments_with_openai(self, transcript):
+    def detect_viral_segments_with_openai(self, transcript, _retry=0):
         """
         Use OpenAI GPT-4o to detect viral moments from full transcript (clip selection).
         Returns list of dicts: [{"start": sec, "end": sec, "viral_score": 0-100, "hook": str}, ...]
@@ -538,6 +540,8 @@ Transcript:
             )
             result = (response.choices[0].message.content or "").strip()
         except Exception as e:
+            if self._maybe_rotate_openai_on_error(e) and _retry < 1:
+                return self.detect_viral_segments_with_openai(transcript, _retry=_retry + 1)
             print(f"[OPENAI] Detect viral segments failed: {e}")
             return []
         segments = self._parse_viral_segments_response(result)
@@ -666,7 +670,7 @@ Transcript:
                 order.append(i)
         return [segments[i] for i in order] if order else segments
 
-    def rank_segments_with_openai(self, segments):
+    def rank_segments_with_openai(self, segments, _retry=0):
         """
         Use OpenAI GPT-4o to select and rank the most viral segments (clip selection).
         Returns segments in ranked order. Safe fallback: returns original list if API key missing or call fails.
@@ -721,6 +725,8 @@ Return the top 10 clips ranked by virality. Reply with segment numbers only, one
                     order.append(i)
             return [segments[i] for i in order] if order else segments
         except Exception as e:
+            if self._maybe_rotate_openai_on_error(e) and _retry < 1:
+                return self.rank_segments_with_openai(segments, _retry=_retry + 1)
             print(f"[OPENAI] Ranking failed: {e}, using original order")
             return segments
 
@@ -910,7 +916,7 @@ Hook: """ + (hook_text or "").strip()[:300]
         except Exception:
             return 0, {}
 
-    def refine_and_score_hook_openai(self, hook_text, max_attempts=2):
+    def refine_and_score_hook_openai(self, hook_text, max_attempts=2, _retry=0):
         """
         Refine hook with GPT-4o, then score it. If hook_score < 50, refine again (max_attempts).
         Returns (refined_hook_text, hook_score).
@@ -920,7 +926,12 @@ Hook: """ + (hook_text or "").strip()[:300]
         best_hook = (hook_text or "").strip()
         best_score = 0
         for _ in range(max_attempts):
-            refined = self.refine_hook_openai(best_hook)
+            try:
+                refined = self.refine_hook_openai(best_hook)
+            except Exception as e:
+                if self._maybe_rotate_openai_on_error(e) and _retry < 1:
+                    return self.refine_and_score_hook_openai(hook_text, max_attempts=max_attempts, _retry=_retry + 1)
+                refined = best_hook
             if not refined:
                 refined = best_hook
             score, _ = self.score_hook_openai(refined)

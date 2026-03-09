@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { CheckCircle, Loader2 } from "lucide-react";
 import AppSidebar from "@/components/AppSidebar";
 import ExportSettingsPanel from "@/components/ExportSettingsPanel";
+import ApiKeysPanel from "@/components/ApiKeysPanel";
 import { useAppSettings } from "@/lib/settings-store";
 
 export default function SettingsPage() {
@@ -39,6 +40,10 @@ export default function SettingsPage() {
                 <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
               </div>
             )}
+          </div>
+
+          <div className="mt-6 rounded-xl border border-zinc-700 bg-zinc-800/50 overflow-hidden">
+            <ApiKeysPanel />
           </div>
         </div>
       </main>
