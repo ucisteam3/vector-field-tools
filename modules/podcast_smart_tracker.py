@@ -176,89 +176,103 @@ class PodcastSmartTracker:
         sample_rate: int = 5,
     ) -> List[Tuple[int, int, int, int]]:
         """
-        Analyze video and return per-frame crop boxes (x, y, w, h).
-        Uses frame differencing for active speaker, lerp for smoothing.
+        Lightweight 1 FPS analysis: sample one frame per second, detect faces, build crop
+        timeline, interpolate to per-frame, smooth, return crop boxes. No full-frame scan.
         """
-        if not self.face_tracker:
-            cap = cv2.VideoCapture(video_path)
-            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            cap.release()
-            crop_w = min(w, int(h * 9 / 16))
-            crop_h = int(crop_w * 16 / 9)
-            cx = w // 2
-            cy = h // 2
-            x = max(0, cx - crop_w // 2)
-            y = max(0, cy - crop_h // 2)
-            n = int((duration or 30) * fps)
-            return [(x, y, crop_w, crop_h)] * n
-
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise ValueError(f"Cannot open video: {video_path}")
 
-        fps = cap.get(cv2.CAP_PROP_FPS)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        dur = duration if duration and duration > 0 else 30.0
         start_frame = int(start_time * fps)
-        end_frame = int((start_time + (duration or 999999)) * fps) if duration else int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        total_frames = int(dur * fps)
+        frames_per_sec = max(1, int(fps))
 
         crop_height = h
         crop_width = min(w, int(h * 9 / 16))
-        if crop_width == w:
+        if crop_width >= w:
+            crop_width = w
             crop_height = int(crop_width * 16 / 9)
+        center_y = (h - crop_height) // 2
 
-        sampled: List[Tuple[int, int, int, int]] = []
-        prev_frame = None
-        prev_crop = (max(0, (w - crop_width) // 2), (h - crop_height) // 2, crop_width, crop_height)
-        n_total = end_frame - start_frame
-        frame_idx = 0
+        def center_x_to_box(cx: float) -> Tuple[int, int, int, int]:
+            cx_int = int(cx)
+            x = max(0, min(cx_int - crop_width // 2, w - crop_width))
+            y = max(0, min(center_y, h - crop_height))
+            return (x, y, crop_width, crop_height)
 
-        while frame_idx < n_total:
+        # Fallback: static center crop (no MediaPipe or on failure)
+        if not self.face_tracker:
+            cap.release()
+            cx = w // 2
+            box = center_x_to_box(cx)
+            return [box] * total_frames
+
+        # Step 1–4: 1 FPS sampling, detect faces, speaker = largest face, build timeline
+        sample_interval = max(1, int(fps))
+        n_seconds = max(1, int(dur))
+        timeline: List[float] = []
+        last_center_x = float(w // 2)
+
+        for sec in range(n_seconds):
+            frame_pos = start_frame + sec * sample_interval
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
             ret, frame = cap.read()
             if not ret:
-                break
-
-            target_crop = prev_crop
-            if frame_idx % sample_rate == 0:
-                small = cv2.resize(frame, (640, 360))
-                scale_x = w / 640
-                scale_y = h / 360
-
-                faces = self.detect_faces(small)
-                for f in faces:
-                    f["center"] = (int(f["center"][0] * scale_x), int(f["center"][1] * scale_y))
-                    f["bbox"] = (
-                        int(f["bbox"][0] * scale_x),
-                        int(f["bbox"][1] * scale_y),
-                        int(f["bbox"][2] * scale_x),
-                        int(f["bbox"][3] * scale_y),
-                    )
-                    f["size"] = f["bbox"][2] * f["bbox"][3]
-
-                motions = self._compute_face_motion(frame, prev_frame or frame, faces)
-                tx, ty, tw, th = self._get_target_crop(faces, motions, w, h)
-                prev_x, prev_y, _, _ = prev_crop
-                t = self.smoothing_factor
-                crop_x = int(_lerp(prev_x, tx, t))
-                crop_y = int(_lerp(prev_y, ty, t))
-                crop_x = max(0, min(crop_x, w - crop_width))
-                crop_y = max(0, min(crop_y, h - crop_height))
-                target_crop = (crop_x, crop_y, crop_width, crop_height)
-                prev_crop = target_crop
-                prev_frame = frame.copy()
-
-            sampled.append(prev_crop)
-            frame_idx += 1
-
-            if frame_idx % 150 == 0:
-                print(f"  [PODCAST_SMART] Frame {frame_idx}/{n_total}")
+                timeline.append(last_center_x)
+                continue
+            small = cv2.resize(frame, (640, 360))
+            scale_x = w / 640
+            scale_y = h / 360
+            faces = self.detect_faces(small)
+            for f in faces:
+                f["center"] = (f["center"][0] * scale_x, f["center"][1] * scale_y)
+                f["bbox"] = (
+                    f["bbox"][0] * scale_x,
+                    f["bbox"][1] * scale_y,
+                    f["bbox"][2] * scale_x,
+                    f["bbox"][3] * scale_y,
+                )
+                f["size"] = f["bbox"][2] * f["bbox"][3]
+            if faces:
+                faces.sort(key=lambda f: f["size"], reverse=True)
+                speaker = faces[0]
+                center_x = speaker["center"][0]
+                last_center_x = center_x
+            else:
+                center_x = last_center_x
+            timeline.append(center_x)
 
         cap.release()
-        return sampled
+
+        # Step 5: Interpolate per-second positions to per-frame (repeat each position frames_per_sec times)
+        positions: List[float] = []
+        for sec in range(n_seconds):
+            idx = min(sec, len(timeline) - 1)
+            val = timeline[idx]
+            for _ in range(frames_per_sec):
+                positions.append(val)
+        positions = positions[:total_frames]
+        if len(positions) < total_frames:
+            last = positions[-1] if positions else (w // 2)
+            positions.extend([last] * (total_frames - len(positions)))
+
+        # Step 6: Exponential smoothing (smoothed[i] = smoothed[i-1]*0.85 + raw[i]*0.15)
+        smoothed: List[float] = []
+        for i in range(len(positions)):
+            if i == 0:
+                smoothed.append(positions[0])
+            else:
+                s = smoothed[i - 1] * 0.85 + positions[i] * 0.15
+                smoothed.append(s)
+
+        # Step 7: Return crop boxes (x, y, w, h) per frame
+        crop_boxes = [center_x_to_box(s) for s in smoothed]
+        print(f"  [PODCAST_SMART] 1 FPS analysis done: {n_seconds} samples -> {len(crop_boxes)} frames")
+        return crop_boxes
 
     def close(self):
         if self.face_tracker and hasattr(self.face_tracker, "close"):
