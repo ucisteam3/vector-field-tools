@@ -519,17 +519,9 @@ class ClipExporter:
                 safe_messagebox=_safe_messagebox,
             )
 
-            # ---- REMOVED: inlined filter build + FFmpeg run moved to export_pipeline ----
-            _REMOVED_has_heavy_filters = (
-                self.parent.custom_settings.get("dynamic_zoom_enabled", False) or
-                bool(ass_path) or
-                self.parent.custom_settings.get("watermark_enabled", False) or
-                self.parent.custom_settings.get("overlay_enabled", False) or
-                self.parent.custom_settings.get("source_credit_enabled", False)
-            )
-
-            # Podcast Smart: pre-process video with per-frame active-speaker crop
-            effective_video_path = str(self.parent.video_path)
+            # Podcast Smart and filter/FFmpeg logic moved to export_pipeline; effective_* set above
+            if False:  # dead code kept for reference
+                effective_video_path = str(self.parent.video_path)
             effective_start = result['start']
             effective_duration = duration
             if export_mode == "podcast_smart" and PODCAST_SMART_AVAILABLE:
