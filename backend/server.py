@@ -58,9 +58,10 @@ app = FastAPI(title="AI Video Clipper", version="1.0")
 
 
 def _log_gpu_status():
-    """Log GPU/CUDA availability and configure for ~90% utilization."""
+    """Log GPU/CUDA and FFmpeg NVENC availability."""
     try:
         import torch
+        import subprocess
         if torch.cuda.is_available():
             name = torch.cuda.get_device_name(0) if torch.cuda.device_count() else "NVIDIA GPU"
             torch.cuda.set_per_process_memory_fraction(0.9)
@@ -69,6 +70,14 @@ def _log_gpu_status():
             print(f"[GPU] CUDA: {name} - 90% VRAM, optimasi kecepatan aktif")
         else:
             print("[GPU] CUDA tidak terdeteksi - menggunakan CPU")
+        # Cek FFmpeg NVENC
+        try:
+            r = subprocess.run(["ffmpeg", "-encoders"], capture_output=True, text=True, timeout=5,
+                               creationflags=0x08000000 if __import__("os").name == "nt" else 0)
+            nvenc_ok = "h264_nvenc" in (r.stdout or "")
+            print(f"[GPU] FFmpeg NVENC: {'Aktif - export akan ~5-10x lebih cepat' if nvenc_ok else 'Tidak tersedia - install FFmpeg dengan NVENC'}")
+        except Exception:
+            print("[GPU] FFmpeg NVENC: tidak bisa dicek")
     except ImportError:
         print("[GPU] PyTorch tidak terinstall")
     except Exception as e:

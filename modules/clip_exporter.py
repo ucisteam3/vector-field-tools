@@ -911,14 +911,14 @@ class ClipExporter:
                 ]
 
                 if encoder == "gpu":
-                    # NVENC (NVIDIA) - p1 = fastest, max GPU throughput
+                    # NVENC (NVIDIA CUDA) - p1 = fastest preset, ~5-10x faster than CPU
                     base_cmd.extend([
                         '-c:v', 'h264_nvenc',
-                        '-preset', 'p1',           # Fastest preset (90% GPU util)
-                        '-cq', '23',               # Quality (18-28, lower=better)
-                        '-b:v', '8M',              # Max video bitrate 8 Mbps
-                        '-maxrate', '10M',         # Peak bitrate
-                        '-bufsize', '16M',         # Buffer size
+                        '-preset', 'p1',           # p1=fastest .. p7=slowest
+                        '-cq', '23',               # Quality (18-28)
+                        '-b:v', '8M',
+                        '-maxrate', '10M',
+                        '-bufsize', '16M',
                         '-c:a', 'aac',
                         '-b:a', '192k',            # Audio bitrate
                         '-ar', '48000',            # Audio sample rate
