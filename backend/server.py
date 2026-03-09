@@ -411,6 +411,7 @@ def export_single_clip(project_id: str, clip_index: int):
 @app.post("/export_clip")
 def export_clip_with_settings(req: ExportClipRequest):
     """Export a clip with full settings. project_id, clip_id (index), settings."""
+    last_error = None
     try:
         fn = export_clip(req.project_id, req.clip_id, req.settings)
         if fn:
@@ -418,6 +419,7 @@ def export_clip_with_settings(req: ExportClipRequest):
     except HTTPException:
         raise
     except Exception as e:
+        last_error = str(e)
         print(f"[SERVER] export_clip error: {e}")
         import traceback
         traceback.print_exc()
@@ -450,14 +452,19 @@ def export_clip_with_settings(req: ExportClipRequest):
         if result.returncode == 0 and out_path.exists():
             return {"clip_path": f"clips/{safe_name}.mp4"}
         err_msg = result.stderr[-500:] if result.stderr else "FFmpeg gagal"
+        last_error = f"FFmpeg: {err_msg[:150]}"
         print(f"[SERVER] Fallback ffmpeg stderr: {err_msg}")
     except HTTPException:
         raise
     except Exception as fallback_err:
+        last_error = str(fallback_err)
         print(f"[SERVER] Fallback extract failed: {fallback_err}")
         import traceback
         traceback.print_exc()
-    raise HTTPException(status_code=500, detail="Export gagal. Pastikan backend berjalan dan cek log.")
+    detail = "Export gagal. Pastikan backend berjalan dan cek log."
+    if last_error:
+        detail = f"Export gagal: {last_error[:200]}"
+    raise HTTPException(status_code=500, detail=detail)
 
 
 # Upload directories
