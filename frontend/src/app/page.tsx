@@ -5,7 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { Youtube, Plus, Film, Calendar, Loader2, Trash2, ShieldCheck, Upload } from "lucide-react";
 import AppSidebar from "@/components/AppSidebar";
-import { analyzeVideo, getProjects, getProjectStatus, deleteProject, retryProject, videoUrl, uploadCookies, getCookiesStatus, getApiKeys, type Project } from "@/lib/api";
+import { analyzeVideo, getProjects, getProjectStatus, deleteProject, retryProject, videoUrl, uploadCookies, getCookiesStatus, getApiKeys, saveDefaultApiProvider, type Project } from "@/lib/api";
 import { useModal } from "@/components/ModalProvider";
 
 function getYoutubeThumbnail(url: string | null | undefined): string | null {
@@ -31,11 +31,12 @@ export default function HomePage() {
   const [mounted, setMounted] = useState(false);
   const [apiKeys, setApiKeys] = useState<{ openai: string[]; gemini: string[]; anthropic: string[]; llama: string[]; deepseek: string[]; groq: string[] } | null>(null);
   const [selectedApiProvider, setSelectedApiProvider] = useState<string>("");
+  const [apiProviderSaved, setApiProviderSaved] = useState(false);
   useEffect(() => setMounted(true), []);
 
   const apiProviderOptions = (() => {
     if (!apiKeys) return [];
-    const labels: Record<string, string> = { openai: "OpenAI (GPT)", gemini: "Gemini", anthropic: "Anthropic", llama: "Llama", deepseek: "DeepSeek", groq: "Groq" };
+    const labels: Record<string, string> = { openai: "OpenAI (GPT)", gemini: "Gemini", anthropic: "Anthropic (Claude)", llama: "Meta (Llama)", deepseek: "DeepSeek", groq: "Groq" };
     const out: { value: string; label: string }[] = [];
     for (const key of ["openai", "gemini", "anthropic", "llama", "deepseek", "groq"]) {
       const arr = (apiKeys as Record<string, string[]>)[key];
@@ -62,14 +63,15 @@ export default function HomePage() {
     getCookiesStatus().then(setCookiesStatus).catch(() => {});
     getApiKeys().then((keys) => {
       setApiKeys(keys);
-      setSelectedApiProvider((prev) => {
-        const opts = ["openai", "gemini", "anthropic", "llama", "deepseek", "groq"].filter(
-          (k) => Array.isArray((keys as Record<string, string[]>)[k]) && (keys as Record<string, string[]>)[k].some((x) => x && String(x).trim())
-        );
-        if (opts.length === 0) return prev;
-        if (prev && opts.includes(prev)) return prev;
-        return opts[0];
-      });
+      const opts = ["openai", "gemini", "anthropic", "llama", "deepseek", "groq"].filter(
+        (k) => Array.isArray((keys as Record<string, string[]>)[k]) && (keys as Record<string, string[]>)[k].some((x) => x && String(x).trim())
+      );
+      const saved = (keys as { default_api_provider?: string | null }).default_api_provider;
+      if (saved && opts.includes(saved)) {
+        setSelectedApiProvider(saved);
+      } else if (opts.length > 0) {
+        setSelectedApiProvider((prev) => (prev && opts.includes(prev) ? prev : opts[0]));
+      }
     }).catch(() => setApiKeys(null));
   }, [loadProjects]);
 
@@ -179,11 +181,11 @@ export default function HomePage() {
           </p>
           <div className="flex flex-col gap-4">
             {apiProviderOptions.length > 0 && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <label className="text-sm text-zinc-500 whitespace-nowrap">API untuk analisis:</label>
                 <select
                   value={selectedApiProvider}
-                  onChange={(e) => setSelectedApiProvider(e.target.value)}
+                  onChange={(e) => { setSelectedApiProvider(e.target.value); setApiProviderSaved(false); }}
                   className="bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-cyan-500/50 outline-none"
                 >
                   <option value="">— Pilih API —</option>
@@ -193,6 +195,21 @@ export default function HomePage() {
                     </option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await saveDefaultApiProvider(selectedApiProvider || null);
+                      setApiProviderSaved(true);
+                      setTimeout(() => setApiProviderSaved(false), 2000);
+                    } catch {
+                      setApiProviderSaved(false);
+                    }
+                  }}
+                  className="px-3 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-sm border border-zinc-600 transition-colors"
+                >
+                  {apiProviderSaved ? "Tersimpan" : "Simpan"}
+                </button>
               </div>
             )}
             <div className="flex gap-3">

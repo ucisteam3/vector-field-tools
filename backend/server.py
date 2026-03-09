@@ -218,6 +218,7 @@ def get_api_keys():
             "deepseek": bool(rotate.get("deepseek", True)),
             "groq": bool(rotate.get("groq", True)),
         },
+        "default_api_provider": (cfg.get("default_api_provider") or "").strip() or None,
     }
 
 
@@ -244,6 +245,30 @@ def save_api_keys(payload: ApiKeysPayload):
     cfg["rotate_on_error"] = rot
     _save_root_config(cfg)
     return {"ok": True}
+
+
+@app.get("/settings/default_api_provider")
+def get_default_api_provider():
+    """Get saved default API provider for analysis (persists across restart)."""
+    cfg = _load_root_config()
+    return {"default_api_provider": (cfg.get("default_api_provider") or "").strip() or None}
+
+
+@app.post("/settings/default_api_provider")
+def save_default_api_provider(req: dict):
+    """Save default API provider. Body: { \"provider\": \"groq\" } or null to clear."""
+    cfg = _load_root_config()
+    provider = req.get("provider")
+    if provider is None or provider == "":
+        cfg["default_api_provider"] = None
+    else:
+        p = (provider if isinstance(provider, str) else str(provider)).strip().lower()
+        if p in ("openai", "gemini", "anthropic", "llama", "deepseek", "groq"):
+            cfg["default_api_provider"] = p
+        else:
+            cfg["default_api_provider"] = None
+    _save_root_config(cfg)
+    return {"ok": True, "default_api_provider": cfg.get("default_api_provider")}
 
 
 def _mask_key(k: str) -> str:

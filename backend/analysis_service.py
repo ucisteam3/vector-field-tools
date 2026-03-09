@@ -126,6 +126,22 @@ def get_analysis_status(project_id: str) -> dict:
         return s
 
 
+def _api_provider_label(provider: str | None) -> str:
+    """Return display name for API provider for progress messages."""
+    if not (provider or "").strip():
+        return "OpenAI"
+    p = (provider or "").strip().lower()
+    labels = {
+        "openai": "OpenAI",
+        "gemini": "Gemini",
+        "anthropic": "Anthropic (Claude)",
+        "llama": "Meta (Llama)",
+        "deepseek": "DeepSeek",
+        "groq": "Groq",
+    }
+    return labels.get(p, provider)
+
+
 def run_analysis(project_id: str, youtube_url: str, on_progress=None, preferred_ai_provider: str = None):
     """Run full analysis in background. Updates project metadata on completion."""
     _set_status(project_id, "analyzing", "Starting...")
@@ -141,6 +157,7 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None, preferred_
 
         project_dir = get_project_dir(project_id)
         video_dest = project_dir / "video.mp4"
+        api_label = _api_provider_label(preferred_ai_provider)
 
         def prog(msg):
             _set_status(project_id, "analyzing", msg)
@@ -285,7 +302,7 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None, preferred_
                     ai_engine = AIEngine(ctx)
                     ctx.openai_available = getattr(ai_engine, "openai_available", False)
 
-                    prog("Detecting viral moments...")
+                    prog(f"Detecting viral moments... (Using {api_label})")
                     ai_segments = ctx.get_viral_segments_from_ai(transcriptions, keyword=None)
                     if ai_segments:
                         transcriptions = ai_segments
@@ -300,8 +317,8 @@ def run_analysis(project_id: str, youtube_url: str, on_progress=None, preferred_
                 prog("Matching segments...")
                 ctx.analysis_results = ctx.match_segments_with_content(heatmap_segments, transcriptions)
 
-            if should_run_title_gen and ctx.analysis_results and ctx.openai_available:
-                prog("Generating titles...")
+            if should_run_title_gen and ctx.analysis_results and getattr(ctx, "has_ai_provider", ctx.openai_available):
+                prog(f"Generating titles... (Using {api_label})")
                 ctx.generate_segment_titles_parallel()
 
             # Build clips list for metadata (PART 8: id, title, start, end, duration, score)

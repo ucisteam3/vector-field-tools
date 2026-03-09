@@ -136,6 +136,11 @@ class WebAppContext:
             self.llama_available = bool(self.api_keys.get("llama"))
             self.deepseek_available = bool(self.api_keys.get("deepseek"))
             self.groq_available = bool(self.api_keys.get("groq"))
+        # Single flag for "run title/hook/segment AI" when any provider is available
+        self.has_ai_provider = (
+            self.openai_available or self.gemini_available or self.anthropic_available
+            or self.llama_available or self.deepseek_available or self.groq_available
+        )
         try:
             self._init_modules()
         except Exception as e:

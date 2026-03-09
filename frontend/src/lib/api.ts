@@ -196,10 +196,22 @@ export type ApiKeysPayload = {
   deepseek: string[];
   groq: string[];
   rotate_on_error: Record<string, boolean>;
+  default_api_provider?: string | null;
 };
 
 export async function getApiKeys(): Promise<ApiKeysPayload> {
   const res = await fetch(`${API}/settings/api_keys`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+/** Save default API provider for analysis (persists across restart). */
+export async function saveDefaultApiProvider(provider: string | null): Promise<{ ok: boolean; default_api_provider?: string | null }> {
+  const res = await fetch(`${API}/settings/default_api_provider`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider: provider ?? null }),
+  });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
