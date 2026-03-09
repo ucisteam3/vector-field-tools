@@ -8,14 +8,9 @@ if errorlevel 1 (echo Tidak ada proses Node.) else (echo Node berhasil dimatikan
 echo.
 
 echo Mematikan backend lama di port 8001 (jika ada)...
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr /R /C:":8001 .*LISTENING"') do (
-  echo Kill PID %%a (port 8001)...
-  taskkill /F /PID %%a >nul 2>nul
-)
+python -c "import subprocess,re; out=subprocess.check_output(['netstat','-ano'],text=True,errors='ignore'); pids=set(re.findall(r':8001\\s+[^\\s]+\\s+[^\\s]+\\s+LISTENING\\s+(\\d+)',out)); print('PIDs',sorted(pids)); [subprocess.run(['taskkill','/F','/PID',pid],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL) for pid in pids]"
 timeout /t 1 /nobreak >nul
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr /R /C:":8001 .*LISTENING"') do (
-  echo [WARNING] Port 8001 masih dipakai oleh PID %%a
-)
+python -c "import subprocess,re; out=subprocess.check_output(['netstat','-ano'],text=True,errors='ignore'); pids=set(re.findall(r':8001\\s+[^\\s]+\\s+[^\\s]+\\s+LISTENING\\s+(\\d+)',out)); print('[WARNING] Port 8001 masih dipakai oleh PID '+', '.join(sorted(pids)) if pids else 'Port 8001 kosong')"
 echo.
 
 echo Menjalankan Backend (API)...
