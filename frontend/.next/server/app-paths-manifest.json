@@ -1,1 +1,5 @@
-{}
+{
+  "/stream-clip/route": "app/stream-clip/route.js",
+  "/page": "app/page.js",
+  "/project/[id]/page": "app/project/[id]/page.js"
+}
