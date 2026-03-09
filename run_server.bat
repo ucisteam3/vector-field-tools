@@ -8,9 +8,13 @@ if errorlevel 1 (echo Tidak ada proses Node.) else (echo Node berhasil dimatikan
 echo.
 
 echo Mematikan backend lama di port 8001 (jika ada)...
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8001" ^| findstr "LISTENING"') do (
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr /R /C:":8001 .*LISTENING"') do (
   echo Kill PID %%a (port 8001)...
   taskkill /F /PID %%a >nul 2>nul
+)
+timeout /t 1 /nobreak >nul
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr /R /C:":8001 .*LISTENING"') do (
+  echo [WARNING] Port 8001 masih dipakai oleh PID %%a
 )
 echo.
 
