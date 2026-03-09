@@ -936,10 +936,10 @@ class ClipExporter:
                 except Exception as e:
                     print(f"  [SOURCE CREDIT ERROR] {e}")
 
-            # setpts at start: reset PTS after -ss trim (fix slow-motion glitch)
+            # setpts at start: reset PTS after -ss trim
             fc_str = "[0:v]setpts=PTS-STARTPTS[v_pts];" + fc_str.replace("[0:v]", "[v_pts]")
-            # Simple passthrough to [v_out] - NO fps filter (sangat lambat, bisa 20 menit untuk 30 detik)
-            fc_str += f"{last_v_label}null[v_out];"
+            # setpts at END: zoompan/filters dapat ubah PTS -> reset lagi supaya durasi benar (28s tetap 28s)
+            fc_str += f"{last_v_label}setpts=PTS-STARTPTS[v_out];"
             
             # --- AUDIO PITCH (optional) ---
             pitch_enabled = self.parent.custom_settings.get("audio_pitch_enabled", False)
@@ -963,7 +963,7 @@ class ClipExporter:
             elif use_pure_gpu_possible and not has_heavy_filters and not base_supports_gpu:
                 # GPU decode/encode with CPU filters (hwdownload -> filters -> hwupload)
                 fc_str = "[0:v]hwdownload,format=nv12[v0];" + fc_str.replace("[0:v]", "[v0]")
-                fc_str = fc_str.replace(f"{last_v_label}null[v_out];", f"{last_v_label}hwupload_cuda[v_out];")
+                fc_str = fc_str.replace(f"{last_v_label}setpts=PTS-STARTPTS[v_out];", f"{last_v_label}setpts=PTS-STARTPTS,hwupload_cuda[v_out];")
                 filter_complex = fc_str
                 use_cpu = False  # Still using NVENC
                 print("  [GPU] Hybrid: NVDEC + CPU filters + NVENC")
