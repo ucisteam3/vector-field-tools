@@ -16,6 +16,7 @@ class _MessageboxStub:
     def showinfo(self, *a, **k):
         pass
 messagebox = _MessageboxStub()
+END = "end"  # tk.END equivalent for headless
 
 try:
     from modules.transcription_engine import WHISPER_AVAILABLE
@@ -39,14 +40,14 @@ class AnalysisOrchestrator:
         import traceback # FIX UnboundLocalError
         self.parent.sub_transcriptions = {} # [FIX] Clear stale subtitle data from previous runs
         self.parent.is_analyzing = True
-        self.parent.download_btn.config(state='disabled')
-        self.parent.progress_bar.start()
-        
+        if getattr(self.parent, "download_btn", None):
+            self.parent.download_btn.config(state='disabled')
+        if getattr(self.parent, "progress_bar", None):
+            self.parent.progress_bar.start()
         # [INFO] Store params for reference
         print(f"[ORCHESTRATOR] Starting analysis: {genre} | {style} | GPU: {use_gpu}")
-
-        # Clear previous results automatically
-        self.parent.root.after(0, self.parent.clear_results)
+        if getattr(self.parent, "root", None) and callable(getattr(self.parent, "clear_results", None)):
+            self.parent.root.after(0, self.parent.clear_results)
         
         try:
             print("\n" + "="*60)
@@ -67,7 +68,7 @@ class AnalysisOrchestrator:
                 self.parent.current_video_path = video_path
 
                 # Warn if manual transcript is missing in local mode
-                manual_text = self.parent.manual_transcript_text.get("1.0", tk.END).strip()
+                manual_text = getattr(self.parent, "manual_transcript_text", None) and self.parent.manual_transcript_text.get("1.0", END).strip() or ""
                 if not manual_text:
                     # If Whisper is available, don't scare user, just proceed to fallback
                     if WHISPER_AVAILABLE:
@@ -75,8 +76,10 @@ class AnalysisOrchestrator:
                     else:
                         if not messagebox.askyesno("Peringatan Transkrip", "Mode File Lokal butuh Transkrip Manual!\nKotak transkrip kosong dan Whisper tidak terinstall.\nLanjut tanpa teks (Cuma Visual)?"):
                             self.parent.is_analyzing = False
-                            self.parent.download_btn.config(state='normal')
-                            self.parent.progress_bar.stop()
+                            if getattr(self.parent, "download_btn", None):
+                                self.parent.download_btn.config(state='normal')
+                            if getattr(self.parent, "progress_bar", None):
+                                self.parent.progress_bar.stop()
                             return
             else:
                 # Step 1: Download video (URL Mode)
@@ -97,7 +100,7 @@ class AnalysisOrchestrator:
             
             # Step 2 & 3: FAST MODE Check (Prioritize Manual Transcript)
             transcriptions = {}
-            manual_text = self.parent.manual_transcript_text.get("1.0", tk.END).strip()
+            manual_text = getattr(self.parent, "manual_transcript_text", None) and self.parent.manual_transcript_text.get("1.0", END).strip() or ""
 
             # [MODE] Structured Segments Check
             if manual_text and ("|" in manual_text or "-" in manual_text):
@@ -106,11 +109,15 @@ class AnalysisOrchestrator:
                      print(f"  [MODE] Segment Terstruktur Terdeteksi ({len(guessed_segments)} klip). Bypass Heatmap!")
                      self.parent.analysis_results = guessed_segments
                      # Need to populate Treeview and cleanup
-                     self.parent.root.after(0, self.parent.update_results_ui)
-                     self.parent.progress_var.set("Berhasil memuat segmen manual.")
+                     if getattr(self.parent, "root", None) and callable(getattr(self.parent, "update_results_ui", None)):
+                         self.parent.root.after(0, self.parent.update_results_ui)
+                     if getattr(self.parent, "progress_var", None):
+                         self.parent.progress_var.set("Berhasil memuat segmen manual.")
                      self.parent.is_analyzing = False
-                     self.parent.download_btn.config(state='normal')
-                     self.parent.progress_bar.stop()
+                     if getattr(self.parent, "download_btn", None):
+                         self.parent.download_btn.config(state='normal')
+                     if getattr(self.parent, "progress_bar", None):
+                         self.parent.progress_bar.stop()
                      return 
             
             
