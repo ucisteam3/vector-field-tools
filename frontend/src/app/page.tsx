@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { Youtube, Plus, Film, Calendar, Loader2, Trash2, ShieldCheck, Upload } from "lucide-react";
 import AppSidebar from "@/components/AppSidebar";
 import { analyzeVideo, getProjects, getProjectStatus, deleteProject, retryProject, videoUrl, uploadCookies, getCookiesStatus, type Project } from "@/lib/api";
+import { useModal } from "@/components/ModalProvider";
 
 function getYoutubeThumbnail(url: string | null | undefined): string | null {
   if (!url) return null;
@@ -15,6 +16,7 @@ function getYoutubeThumbnail(url: string | null | undefined): string | null {
 import { useAppSettings } from "@/lib/settings-store";
 
 export default function HomePage() {
+  const modal = useModal();
   const [exportSettings] = useAppSettings();
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -96,7 +98,7 @@ export default function HomePage() {
       }));
       setUrl(""); // Clear input so user can paste another
     } catch (e) {
-      alert(String(e));
+      await modal.alert(String(e), { title: "Gagal" });
     } finally {
       setLoading(false);
     }
@@ -105,13 +107,14 @@ export default function HomePage() {
   const handleDelete = async (projectId: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!confirm("Hapus project ini?")) return;
+    const ok = await modal.confirm("Hapus project ini?", { title: "Konfirmasi", confirmText: "Hapus", cancelText: "Batal" });
+    if (!ok) return;
     setDeleting(projectId);
     try {
       await deleteProject(projectId);
       setProjects((prev) => prev.filter((p) => p.project_id !== projectId));
     } catch (err) {
-      alert(String(err));
+      await modal.alert(String(err), { title: "Gagal" });
     } finally {
       setDeleting(null);
     }
@@ -130,7 +133,7 @@ export default function HomePage() {
       );
       setStatusCache((c) => ({ ...c, [projectId]: { progress: "Starting...", eta_message: "~5 min" } }));
     } catch (err) {
-      alert(String(err));
+      await modal.alert(String(err), { title: "Gagal" });
     } finally {
       setRetrying(null);
     }

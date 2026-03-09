@@ -18,8 +18,10 @@ import {
 import { useAppSettings } from "@/lib/settings-store";
 import { EXPORT_MODE_OPTIONS } from "@/lib/export-settings";
 import AppSidebar from "@/components/AppSidebar";
+import { useModal } from "@/components/ModalProvider";
 
 export default function ProjectPage() {
+  const modal = useModal();
   const params = useParams();
   const id = params?.id as string;
   const [exportSettings, setExportSettings] = useAppSettings();
@@ -115,7 +117,7 @@ export default function ProjectPage() {
       await poll();
     } catch (err) {
       setExportProgress(null);
-      alert(err instanceof Error ? err.message : "Export gagal. Cek konsol untuk detail.");
+      await modal.alert(err instanceof Error ? err.message : "Export gagal. Cek konsol untuk detail.", { title: "Export gagal" });
     } finally {
       setDownloading((s) => {
         const n = new Set(s);
