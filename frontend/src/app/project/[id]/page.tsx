@@ -87,7 +87,7 @@ export default function ProjectPage() {
     setExportProgress({ progress: 0, message: "Memulai..." });
     try {
       const { job_id } = await exportClipAsync(id, index, exportSettings);
-      const poll = async () => {
+      const poll = async (): Promise<void> => {
         const status = await getExportStatus(job_id);
         setExportProgress({ progress: status.progress, message: status.message });
         if (status.status === "done" && status.clip_path) {
@@ -109,7 +109,8 @@ export default function ProjectPage() {
           setExportProgress(null);
           throw new Error(status.error || "Export gagal");
         }
-        setTimeout(poll, 400);
+        await new Promise((r) => setTimeout(r, 400));
+        return poll();
       };
       await poll();
     } catch (err) {
@@ -267,6 +268,29 @@ export default function ProjectPage() {
           </div>
         )}
       </main>
+
+      {/* Export progress modal */}
+      {exportProgress && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-zinc-800 border border-zinc-600 rounded-xl p-6 w-full max-w-sm mx-4 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <Loader2 className="w-6 h-6 animate-spin text-cyan-400 flex-shrink-0" />
+              <span className="text-white font-medium">Export klip</span>
+            </div>
+            <div className="w-full bg-zinc-700 rounded-full h-2.5 overflow-hidden mb-2">
+              <motion.div
+                className="h-full bg-cyan-500 rounded-full"
+                initial={false}
+                animate={{ width: `${Math.min(100, exportProgress.progress)}%` }}
+                transition={{ duration: 0.25 }}
+              />
+            </div>
+            <p className="text-sm text-zinc-400 text-center">
+              {exportProgress.progress}% — {exportProgress.message}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
