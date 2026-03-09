@@ -1,11 +1,11 @@
 ---
-description: Otomatis jalankan ulang aplikasi setelah perubahan kode
+description: WAJIB restart aplikasi setelah SETIAP perubahan kode
 alwaysApply: true
 ---
 
-# Auto Restart After Changes
+# Auto Restart - WAJIB
 
-Setelah melakukan perubahan pada kode (backend atau frontend), **selalu jalankan ulang aplikasi** secara otomatis.
+**PENTING**: Setiap kali melakukan perubahan pada kode (backend atau frontend), **WAJIB langsung restart aplikasi** tanpa perlu menunggu user minta. Restart harus dilakukan di akhir setiap sesi edit.
 
 ## Langkah
 
@@ -22,9 +22,9 @@ Setelah melakukan perubahan pada kode (backend atau frontend), **selalu jalankan
    cd j:\HEATMAP5\frontend; npm run dev
    ```
 
-**Kedepannya**: Setiap kali melakukan perubahan pada kode backend atau frontend, **langsung restart aplikasi** tanpa menunggu user minta.
+**KEDEPANNYA**: Setiap kali selesai mengedit kode backend atau frontend, **LANGKAH TERAKHIR HARUS restart aplikasi**. Jangan pernah lupa. User sudah menegaskan berkali-kali.
 
-Untuk perubahan **frontend only**: cukup restart frontend.
+Untuk perubahan **frontend only**: restart frontend.
 Untuk perubahan **backend only**: cukup restart backend.
 Untuk perubahan **keduanya**: restart keduanya.
 
