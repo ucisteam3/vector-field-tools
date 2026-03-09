@@ -405,7 +405,7 @@ class ClipExporter:
                     )
                     input_args = ['-i', str(self.parent.video_path), '-i', bgm_file_path]
                 else:
-                    audio_filter = "anull" # Passthrough
+                    audio_filter = "[0:a]anull"  # Passthrough
                     input_args = ['-i', str(self.parent.video_path)]
 
 
@@ -943,15 +943,16 @@ class ClipExporter:
             fc_str += f"{last_v_label}fps=30,setpts=PTS-STARTPTS[v_out];"
             
             # --- AUDIO PITCH (optional) ---
+            # aresample=async=1:first_pts=0 syncs audio timestamps to video (fix A/V desync)
             pitch_enabled = self.parent.custom_settings.get("audio_pitch_enabled", False)
             pitch_semitones = float(self.parent.custom_settings.get("audio_pitch_semitones", 0))
             pitch_semitones = max(-4, min(4, pitch_semitones))
             if pitch_enabled and pitch_semitones != 0:
                 rate_in = 48000 * (2 ** (pitch_semitones / 12.0))
                 print(f"  [AUDIO PITCH] {pitch_semitones:+.1f} semitones -> asetrate={rate_in:.0f},aresample=48000")
-                fc_str += f"{audio_filter}[a_pitch_in];[a_pitch_in]asetrate={rate_in:.0f},aresample=48000[a_out]"
+                fc_str += f"{audio_filter}[a_pitch_in];[a_pitch_in]asetrate={rate_in:.0f},aresample=48000[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
             else:
-                fc_str += f"{audio_filter}[a_out]"
+                fc_str += f"{audio_filter}[a_sync];[a_sync]aresample=async=1:first_pts=0[a_out]"
                 
             # GPU vs CPU pipeline
             use_pure_gpu = use_pure_gpu_possible and not has_heavy_filters and base_supports_gpu
@@ -997,6 +998,7 @@ class ClipExporter:
                     *rest_inputs,
                     '-filter_complex', filter_complex,
                     '-map', '[v_out]', '-map', '[a_out]',
+                    '-r', '30',
                     '-max_muxing_queue_size', '1024',
                 ]
                 if use_gpu_encode:
