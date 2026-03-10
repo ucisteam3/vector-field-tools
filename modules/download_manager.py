@@ -237,6 +237,10 @@ class DownloadManager:
         has_cookies = cookie_path is not None
 
         if has_cookies:
+            # Age-restricted videos: browser session often works when exported .txt does not.
+            # Try Chrome cookies first (user must be logged in & age-confirmed in Chrome).
+            attempts.append(("Cookies dari Chrome (browser)", ydl_opts_browser))
+
             ydl_opts_simple = base_opts.copy()
             ydl_opts_simple['cookiefile'] = cookie_path
             if 'extractor_args' in ydl_opts_simple:
@@ -256,12 +260,31 @@ class DownloadManager:
             ydl_opts_cookie_any['cookiefile'] = cookie_path
             ydl_opts_cookie_any['format'] = fmt_any
 
+            # Permissive format — avoids "Requested format is not available" when only low/merged formats exist
+            ydl_opts_cookie_best = base_opts.copy()
+            ydl_opts_cookie_best['cookiefile'] = cookie_path
+            ydl_opts_cookie_best['format'] = 'bestvideo+bestaudio/best'
+            ydl_opts_cookie_best.pop('format_sort', None)
+
+            # web_embedded client sometimes returns streams for age-gated content when file cookies are used
+            ydl_opts_cookie_embedded = base_opts.copy()
+            ydl_opts_cookie_embedded['cookiefile'] = cookie_path
+            ydl_opts_cookie_embedded['extractor_args'] = {'youtube': {'player_client': ['web_embedded', 'web', 'android']}}
+            ydl_opts_cookie_embedded['format'] = 'bestvideo+bestaudio/best'
+            ydl_opts_cookie_embedded.pop('format_sort', None)
+
             attempts.extend([
                 ("Cookies Simple", ydl_opts_simple),
                 ("Cookies Priority", ydl_opts_cookie_first),
                 ("Cookies + Android", ydl_opts_cookie_android),
                 ("Cookies + Any Resolution", ydl_opts_cookie_any),
+                ("Cookies + Best Any", ydl_opts_cookie_best),
+                ("Cookies + Web Embedded", ydl_opts_cookie_embedded),
             ])
+
+        # Avoid duplicate Browser attempt if already tried at top with cookies
+        if not has_cookies:
+            attempts.append(("Browser Cookies (Chrome)", ydl_opts_browser))
 
         attempts.extend([
             ("Anonymous Fallback", ydl_opts_anon),
@@ -271,7 +294,6 @@ class DownloadManager:
             ("Creator Bypass", ydl_opts_creator),
             ("Android Legacy", ydl_opts_android),
             ("Web Authenticated", ydl_opts_web),
-            ("Browser Cookies (Chrome)", ydl_opts_browser),
             ("Simple Best 720p", ydl_opts_simple_best),
             ("Emergency 720p", ydl_opts_fallback_720),
             ("Any Resolution", ydl_opts_any_anon),
@@ -335,12 +357,22 @@ class DownloadManager:
             time.sleep(2 * current_try)
 
         cookie_hint = "3. Add 'www.youtube.com_cookies.txt' to project folder.\n" if not cookie_path else ""
+        age_hint = ""
+        err_lower = (last_error or "").lower()
+        if "age" in err_lower or "login" in err_lower or "confirm" in err_lower or "inappropriate" in err_lower:
+            age_hint = (
+                "4. Video TERBATAS UMUR: buka link di Chrome, login & konfirmasi umur, lalu:\n"
+                "   - Upload cookies baru di Settings > Cookies YouTube, atau\n"
+                "   - Tutup Chrome lalu jalankan aplikasi lagi (strategi 'Cookies dari Chrome').\n"
+                "5. Perbarui yt-dlp: pip install -U yt-dlp\n"
+            )
         error_msg = (
             f"Download failed after {len(attempts)} strategies: {last_error}\n\n"
             "Troubleshooting:\n"
             "1. Video may be 480p-only - retry.\n"
             "2. YouTube may be blocking - wait 5-10 min.\n"
             f"{cookie_hint}"
+            f"{age_hint}"
             f"\nDetail: {last_error}"
         )
         print(f"[DOWNLOAD] ERROR: {error_msg}")

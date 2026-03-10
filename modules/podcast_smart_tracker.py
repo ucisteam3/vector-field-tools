@@ -37,6 +37,7 @@ class PodcastSmartTracker:
         face_margin: float = 1.4,
         motion_threshold: float = 8.0,
         both_speak_ratio: float = 0.6,
+        emotion_threshold: float = 18.0,
     ):
         """
         Args:
@@ -49,12 +50,16 @@ class PodcastSmartTracker:
         self.face_margin = face_margin
         self.motion_threshold = motion_threshold
         self.both_speak_ratio = both_speak_ratio
+        self.emotion_threshold = emotion_threshold
         self.face_tracker: Optional[FaceTracker] = None
         if MEDIAPIPE_AVAILABLE:
             try:
                 self.face_tracker = FaceTracker(smoothing_window=15)
             except Exception as e:
                 print(f"[PODCAST_SMART] FaceTracker init: {e}")
+
+        # Laughter markers (optional transcript-based zoom)
+        self.laughter_keywords = ["haha", "wkwk", "tertawa", "(laugh)", "[laugh]"]
 
     def detect_faces(self, frame: np.ndarray) -> List[Dict]:
         """Detect faces in frame. Returns list of {bbox, center, confidence, size}."""
@@ -68,11 +73,15 @@ class PodcastSmartTracker:
         prev_frame: np.ndarray,
         faces: List[Dict],
     ) -> List[float]:
-        """Compute motion (mean abs diff) in each face region. Proxy for mouth movement."""
+        """
+        Compute active-speaker motion score per face.
+        Enhanced: motion_score = (mouth_motion * 1.6) + (face_motion * 0.4)
+        where mouth_motion is computed on the lower part of the face box.
+        """
         if prev_frame is None or frame is None:
             return [0.0] * len(faces)
 
-        motions = []
+        motions: List[float] = []
         h, w = frame.shape[:2]
         for face in faces:
             x, y, fw, fh = face["bbox"]
@@ -83,11 +92,27 @@ class PodcastSmartTracker:
             fh = max(2, min(int(fh), h - y))
             roi_curr = frame[y : y + fh, x : x + fw]
             roi_prev = prev_frame[y : y + fh, x : x + fw]
-            if roi_curr.size and roi_prev.size and roi_curr.shape == roi_prev.shape:
-                diff = cv2.absdiff(roi_curr, roi_prev)
-                motions.append(float(np.mean(diff)))
-            else:
+            if not (roi_curr.size and roi_prev.size and roi_curr.shape == roi_prev.shape):
                 motions.append(0.0)
+                continue
+
+            # Face motion (overall)
+            diff_face = cv2.absdiff(roi_curr, roi_prev)
+            face_motion = float(np.mean(diff_face))
+
+            # Mouth motion (lower region of face) - stronger indicator of speaking
+            mouth_y0 = int(fh * 0.62)
+            mouth_y0 = max(0, min(mouth_y0, fh - 2))
+            mouth_curr = roi_curr[mouth_y0:fh, :]
+            mouth_prev = roi_prev[mouth_y0:fh, :]
+            if mouth_curr.size and mouth_prev.size and mouth_curr.shape == mouth_prev.shape:
+                diff_mouth = cv2.absdiff(mouth_curr, mouth_prev)
+                mouth_motion = float(np.mean(diff_mouth))
+            else:
+                mouth_motion = 0.0
+
+            motion_score = (mouth_motion * 1.6) + (face_motion * 0.4)
+            motions.append(motion_score)
         return motions
 
     def _get_target_crop(
@@ -96,6 +121,9 @@ class PodcastSmartTracker:
         motions: List[float],
         frame_width: int,
         frame_height: int,
+        *,
+        emotion_score: float = 0.0,
+        laugh_active: bool = False,
     ) -> Tuple[float, float, float, float]:
         """
         Compute target crop (x, y, w, h) for current frame.
@@ -103,77 +131,64 @@ class PodcastSmartTracker:
         - Both speaking: zoom out to include both faces
         - No faces: center crop
         """
+        # STEP 1 — ALWAYS CROP BASED ON VIDEO HEIGHT (perfect 9:16 region)
         crop_height = frame_height
-        crop_width = int(crop_height * 9 / 16)
-        if crop_width > frame_width:
-            crop_width = frame_width
-            crop_height = int(crop_width * 16 / 9)
+        crop_width = int(frame_height * 9 / 16)
+        crop_width = max(2, min(crop_width, frame_width))
 
         # Safe center crop when no faces — never return (0,0)
         if not faces:
-            cx = frame_width / 2
-            cy = frame_height / 2
-            crop_x = max(0, min(cx - crop_width / 2, frame_width - crop_width))
-            crop_y = max(0, min(cy - crop_height / 2, frame_height - crop_height))
-            return (crop_x, crop_y, crop_width, crop_height)
+            center_x = frame_width / 2
+            crop_x = max(0, min(center_x - crop_width / 2, frame_width - crop_width))
+            return (crop_x, 0.0, crop_width, crop_height)
 
         # Determine active speaker(s)
         if len(faces) == 1:
             f = faces[0]
-            cx, cy = f["center"]
-            # Apply face margin: expand bbox
-            _, _, fw, fh = f["bbox"]
-            pad_w = fw * (self.face_margin - 1) / 2
-            pad_h = fh * (self.face_margin - 1) / 2
-            # Target: center crop on face with room around
-            target_cx = cx
-            target_cy = cy
+            fx, fy, fw, fh = f["bbox"]
+            face_center = fx + (fw / 2.0)
+            target_cx = face_center
         else:
             # Two (or more) faces - check if both speaking
             m0 = motions[0] if len(motions) > 0 else 0
             m1 = motions[1] if len(motions) > 1 else 0
             total = m0 + m1
             if total < self.motion_threshold:
-                # Neither speaking - safe center crop (never (0,0))
-                cx = frame_width / 2
-                cy = frame_height / 2
-                crop_x = max(0, min(cx - crop_width / 2, frame_width - crop_width))
-                crop_y = max(0, min(cy - crop_height / 2, frame_height - crop_height))
-                return (crop_x, crop_y, crop_width, crop_height)
-            ratio = min(m0, m1) / max(m0, m1) if max(m0, m1) > 0 else 0
-            if ratio >= self.both_speak_ratio:
-                # Both speaking - zoom out: crop to include both faces
-                xs = [f["center"][0] for f in faces[:2]]
-                ys = [f["center"][1] for f in faces[:2]]
-                xmin = min(xs[0] - faces[0]["bbox"][2] * self.face_margin / 2,
-                          xs[1] - faces[1]["bbox"][2] * self.face_margin / 2)
-                xmax = max(xs[0] + faces[0]["bbox"][2] * self.face_margin / 2,
-                          xs[1] + faces[1]["bbox"][2] * self.face_margin / 2)
-                span = xmax - xmin
-                # Ensure crop width encompasses both with margin
-                crop_w_needed = max(crop_width, span * 1.2)
-                if crop_w_needed > frame_width:
-                    crop_w_needed = frame_width
-                crop_h_needed = int(crop_w_needed * 16 / 9)
-                if crop_h_needed > frame_height:
-                    crop_h_needed = frame_height
-                    crop_w_needed = int(crop_h_needed * 9 / 16)
-                target_cx = (min(xs) + max(xs)) / 2
-                target_cy = frame_height / 2
-                crop_width = int(crop_w_needed)
-                crop_height = crop_h_needed
+                # Neither speaking - safe center crop
+                center_x = frame_width / 2
+                crop_x = max(0, min(center_x - crop_width / 2, frame_width - crop_width))
+                return (crop_x, 0.0, crop_width, crop_height)
+            # Dual speaker mode when both motion scores are similar
+            denom = max(m0, m1) if max(m0, m1) > 0 else 1.0
+            similar = abs(m0 - m1) / denom < 0.35
+            if similar:
+                # STEP 4 — DUAL SPEAKER MODE: include both faces, but keep fixed 9:16 width
+                f1, f2 = faces[0], faces[1]
+                x1, y1, w1, h1 = f1["bbox"]
+                x2, y2, w2, h2 = f2["bbox"]
+                min_x = min(x1, x2)
+                max_x = max(x1 + w1, x2 + w2)
+                center_x = (min_x + max_x) / 2.0
+                target_cx = center_x
             else:
                 # Single speaker - focus on face with more motion
-                idx = 0 if m0 >= m1 else 1
+                # Face priority: size * 0.6 + motion_score * 0.4
+                scores = []
+                for i in range(2):
+                    f = faces[i]
+                    size = float(f.get("size") or (f["bbox"][2] * f["bbox"][3]))
+                    mot = float(motions[i]) if i < len(motions) else 0.0
+                    scores.append((size * 0.6 + mot * 0.4, i))
+                idx = max(scores, key=lambda t: t[0])[1] if scores else (0 if m0 >= m1 else 1)
                 f = faces[idx]
-                target_cx = f["center"][0]
-                target_cy = f["center"][1]
+                fx, fy, fw, fh = f["bbox"]
+                face_center = fx + (fw / 2.0)
+                target_cx = face_center
 
+        # STEP 6 — CLAMP CROP AREA, y always 0 for full-height vertical crop
         crop_x = target_cx - crop_width / 2
-        crop_y = (frame_height - crop_height) / 2
         crop_x = max(0, min(crop_x, frame_width - crop_width))
-        crop_y = max(0, min(crop_y, frame_height - crop_height))
-        return (crop_x, crop_y, crop_width, crop_height)
+        return (crop_x, 0.0, crop_width, crop_height)
 
     def analyze_video(
         self,
@@ -181,6 +196,7 @@ class PodcastSmartTracker:
         start_time: float = 0,
         duration: Optional[float] = None,
         sample_rate: int = 5,
+        transcript_text: Optional[str] = None,
     ) -> List[Tuple[int, int, int, int]]:
         """
         Lightweight 1 FPS analysis: sample one frame per second, detect faces, build crop
@@ -221,16 +237,23 @@ class PodcastSmartTracker:
         # Faster sampling for responsiveness: ~5 samples per second
         sample_interval = max(1, int(fps / 5))
         n_samples = max(1, (total_frames + sample_interval - 1) // sample_interval)
-        timeline: List[float] = []
-        last_center_x = float(w // 2)
+        timeline: List[Tuple[float, float, float, float]] = []
+        # Default: safe center crop box
+        last_box = (float((w - crop_width) // 2), float(center_y), float(crop_width), float(crop_height))
         prev_frame = None
+        # Laughter zoom window (2 seconds)
+        laugh_zoom_frames = 0
+        if transcript_text:
+            tt = (transcript_text or "").lower()
+            if any(k in tt for k in self.laughter_keywords):
+                laugh_zoom_frames = int(max(1.0, fps) * 2)
 
         for i in range(n_samples):
             frame_pos = min(start_frame + i * sample_interval, start_frame + total_frames - 1)
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
             ret, frame = cap.read()
             if not ret:
-                timeline.append(last_center_x)
+                timeline.append(last_box)
                 continue
             small = cv2.resize(frame, (640, 360))
             scale_x = w / 640
@@ -247,25 +270,36 @@ class PodcastSmartTracker:
                     f["bbox"][3] * scale_y,
                 )
                 f["size"] = f["bbox"][2] * f["bbox"][3]
-            if faces:
-                # Choose active speaker by motion; fallback to largest face
-                if motions and len(motions) == len(faces):
-                    idx = int(np.argmax(motions))
-                    speaker = faces[idx]
-                else:
-                    faces.sort(key=lambda f: f["size"], reverse=True)
-                    speaker = faces[0]
-                center_x = speaker["center"][0]
-                last_center_x = center_x
-            else:
-                center_x = last_center_x
-            timeline.append(center_x)
+            # Visual motion (frame intensity) for emotion-aware zoom
+            visual_motion = 0.0
+            if prev_frame is not None and prev_frame.shape == small.shape and prev_frame.size and small.size:
+                try:
+                    visual_motion = float(np.mean(cv2.absdiff(small, prev_frame)))
+                except Exception:
+                    visual_motion = 0.0
+            speech_motion = float(max(motions) if motions else 0.0)
+            emotion_score = (speech_motion * 0.7) + (visual_motion * 0.3)
+            laugh_active = laugh_zoom_frames > 0
+
+            # Target crop from enhanced active-speaker + dual-speaker logic; safe center crop if none
+            target = self._get_target_crop(
+                faces,
+                motions,
+                w,
+                h,
+                emotion_score=emotion_score,
+                laugh_active=laugh_active,
+            )
+            last_box = target
+            timeline.append(target)
             prev_frame = small.copy()
+            if laugh_zoom_frames > 0:
+                laugh_zoom_frames -= sample_interval
 
         cap.release()
 
-        # Step 5: Interpolate sampled positions to per-frame (repeat each value sample_interval times)
-        positions: List[float] = []
+        # Step 5: Interpolate sampled boxes to per-frame (repeat each value sample_interval times)
+        positions: List[Tuple[float, float, float, float]] = []
         for i in range(n_samples):
             idx = min(i, len(timeline) - 1)
             val = timeline[idx]
@@ -273,20 +307,35 @@ class PodcastSmartTracker:
                 positions.append(val)
         positions = positions[:total_frames]
         if len(positions) < total_frames:
-            last = positions[-1] if positions else (w // 2)
+            last = positions[-1] if positions else last_box
             positions.extend([last] * (total_frames - len(positions)))
 
-        # Step 6: Smoothing via _lerp(prev, curr, smoothing_factor)
-        smoothed: List[float] = []
-        for i in range(len(positions)):
+        # Step 6: Smoothing (x only) + jump-cut reduction
+        smoothed_x: List[float] = []
+        for i, (x, _y, _cw, _ch) in enumerate(positions):
             if i == 0:
-                smoothed.append(positions[0])
-            else:
-                s = _lerp(smoothed[i - 1], positions[i], self.smoothing_factor)
-                smoothed.append(s)
+                smoothed_x.append(float(x))
+                continue
+            px = smoothed_x[i - 1]
+            sx = _lerp(px, float(x), self.smoothing_factor)
+            # Jump cut reduction: clamp movement if it changes too fast
+            if abs(sx - px) > w * 0.25:
+                sx = px + (w * 0.15 if sx > px else -w * 0.15)
+            smoothed_x.append(sx)
 
-        # Step 7: Return crop boxes (x, y, w, h) per frame
-        crop_boxes = [center_x_to_box(s) for s in smoothed]
+        # Step 7: Return crop boxes (x, y, w, h) per frame (always full-height 9:16)
+        crop_boxes: List[Tuple[int, int, int, int]] = []
+        crop_w = int(h * 9 / 16)
+        crop_h = h
+        # SAFE CROP VALIDATION
+        if crop_w <= 0 or crop_h <= 0:
+            crop_w = int(h * 9 / 16)
+            crop_h = h
+        crop_w = max(2, min(crop_w, w))
+        for x in smoothed_x:
+            x_i = int(x)
+            x_i = max(0, min(x_i, w - crop_w))
+            crop_boxes.append((x_i, 0, crop_w, crop_h))
         print(f"  [PODCAST_SMART] ~{sample_rate} FPS analysis done: {n_samples} samples -> {len(crop_boxes)} frames")
         return crop_boxes
 

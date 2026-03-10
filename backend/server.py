@@ -496,7 +496,7 @@ def project_status(project_id: str):
 
 @app.post("/project/{project_id}/retry")
 def project_retry(project_id: str):
-    """Retry analysis for a failed project. Uses stored youtube_url."""
+    """Retry analysis for a failed project. Uses stored youtube_url and current default API from config."""
     meta = get_project(project_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -504,7 +504,10 @@ def project_retry(project_id: str):
     if not url:
         raise HTTPException(status_code=400, detail="No YouTube URL for this project")
     update_project(project_id, status="analyzing", error=None)
-    preferred = meta.get("preferred_ai_provider")
+    # Use current saved default (e.g. DeepSeek after user changed and clicked Simpan), else project's original
+    cfg = _load_root_config()
+    preferred = (cfg.get("default_api_provider") or "").strip() or meta.get("preferred_ai_provider")
+    update_project(project_id, preferred_ai_provider=preferred)
     run_analysis(project_id, url, preferred_ai_provider=preferred)
     return {"ok": True}
 
@@ -856,10 +859,21 @@ async def upload_cookies_endpoint(file: UploadFile = File(...)):
 
 @app.get("/cookies_status")
 def cookies_status():
-    """Check if YouTube cookies file exists."""
+    """Check if YouTube cookies file exists and when it was last written."""
     exists = COOKIE_FILE.exists()
-    size = COOKIE_FILE.stat().st_size if exists else 0
-    return {"exists": exists, "size_kb": round(size / 1024, 1)}
+    size = 0
+    modified_at = None
+    if exists:
+        st = COOKIE_FILE.stat()
+        size = st.st_size
+        from datetime import datetime, timezone
+        modified_at = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat()
+    return {
+        "exists": exists,
+        "size_kb": round(size / 1024, 1),
+        "modified_at": modified_at,
+        "path": "www.youtube.com_cookies.txt",
+    }
 
 
 @app.get("/fonts")

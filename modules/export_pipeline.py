@@ -62,7 +62,10 @@ def build_video_filter(
 
     # Base mode
     if mode == "podcast_smart":
-        fc = podcast_passthrough(use_gpu=use_gpu)
+        if podcast_preprocessed:
+            fc = podcast_passthrough(use_gpu=use_gpu)
+        else:
+            fc = portrait_crop()
         last = "[v_mixed]"
     elif mode == "face_tracking":
         fc = portrait_crop()

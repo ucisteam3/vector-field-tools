@@ -176,7 +176,12 @@ export async function uploadCookies(file: File): Promise<{ ok: boolean }> {
   return res.json();
 }
 
-export async function getCookiesStatus(): Promise<{ exists: boolean; size_kb: number }> {
+export async function getCookiesStatus(): Promise<{
+  exists: boolean;
+  size_kb: number;
+  modified_at?: string | null;
+  path?: string;
+}> {
   const res = await fetch(`${API}/cookies_status`);
   if (!res.ok) return { exists: false, size_kb: 0 };
   return res.json();

@@ -5,6 +5,7 @@ import { CheckCircle, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import AppSidebar from "@/components/AppSidebar";
 import ExportSettingsPanel from "@/components/ExportSettingsPanel";
 import ApiKeysPanel from "@/components/ApiKeysPanel";
+import CookiesSettingsPanel from "@/components/CookiesSettingsPanel";
 import { useAppSettings } from "@/lib/settings-store";
 
 function AccordionSection({
@@ -40,6 +41,7 @@ export default function SettingsPage() {
   const [mounted, setMounted] = useState(false);
   const [openExport, setOpenExport] = useState(false);
   const [openKeys, setOpenKeys] = useState(false);
+  const [openCookies, setOpenCookies] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -79,6 +81,15 @@ export default function SettingsPage() {
               onToggle={() => setOpenKeys((v) => !v)}
             >
               <ApiKeysPanel />
+            </AccordionSection>
+
+            <AccordionSection
+              title="Cookies YouTube"
+              description="Upload cookies terbaru (.txt) untuk unduh/subtitle—bypass batas umur & wilayah."
+              open={openCookies}
+              onToggle={() => setOpenCookies((v) => !v)}
+            >
+              <CookiesSettingsPanel />
             </AccordionSection>
           </div>
         </div>

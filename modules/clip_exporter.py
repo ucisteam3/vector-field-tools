@@ -552,11 +552,31 @@ class ClipExporter:
                             frame = np.frombuffer(raw, dtype=np.uint8).reshape((src_h, src_w, 3))
                             box_idx = min(frame_idx, len(crop_boxes) - 1)
                             x, y, cw, ch = (int(v) for v in crop_boxes[box_idx])
-                            if cw > 0 and ch > 0:
-                                cropped = frame[y:y+ch, x:x+cw]
-                                if cropped.size:
-                                    scaled = cv2.resize(cropped, (1080, 1920))
-                                    proc_encode.stdin.write(scaled.tobytes())
+                            # SAFE CROP fallback: never allow invalid crop to break vertical output
+                            if cw <= 0 or ch <= 0:
+                                cw = int(src_h * 9 / 16)
+                                ch = src_h
+                                x = (src_w - cw) // 2
+                                y = 0
+                            # Clamp crop box to frame bounds
+                            if cw > src_w:
+                                cw = src_w
+                            if ch > src_h:
+                                ch = src_h
+                            if x < 0:
+                                x = 0
+                            if y < 0:
+                                y = 0
+                            if x + cw > src_w:
+                                x = max(0, src_w - cw)
+                            if y + ch > src_h:
+                                y = max(0, src_h - ch)
+
+                            cropped = frame[y:y+ch, x:x+cw]
+                            if cropped.size:
+                                # Always resize AFTER cropping (never scale full frame)
+                                scaled = cv2.resize(cropped, (1080, 1920))
+                                proc_encode.stdin.write(scaled.tobytes())
                             frame_idx += 1
                             if frame_idx % 30 == 0:
                                 pct = 15 + int(30 * frame_idx / max(1, total_frames))
