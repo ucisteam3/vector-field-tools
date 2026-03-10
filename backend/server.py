@@ -29,6 +29,8 @@ from pydantic import BaseModel
 from typing import Optional, Any
 import json
 
+from modules.runtime_paths import ffmpeg_cmd
+
 from backend.project_manager import (
     create_project,
     get_project,
@@ -87,7 +89,7 @@ def _log_gpu_status():
         # Detect GPU via ffmpeg -hwaccels (NVDEC)
         hwaccel_cuda = False
         try:
-            h = subprocess.run(["ffmpeg", "-hwaccels"], capture_output=True, text=True, timeout=5,
+            h = subprocess.run([ffmpeg_cmd(), "-hwaccels"], capture_output=True, text=True, timeout=5,
                                creationflags=0x08000000 if __import__("os").name == "nt" else 0)
             hwaccel_cuda = "cuda" in ((h.stdout or "") + (h.stderr or "")).lower()
             print(f"[GPU] FFmpeg NVDEC (hwaccel cuda): {'OK' if hwaccel_cuda else 'Tidak'}")
@@ -95,13 +97,13 @@ def _log_gpu_status():
             print(f"[GPU] FFmpeg -hwaccels: {e}")
         # Cek FFmpeg NVENC + test encode
         try:
-            r = subprocess.run(["ffmpeg", "-encoders"], capture_output=True, text=True, timeout=5,
+            r = subprocess.run([ffmpeg_cmd(), "-encoders"], capture_output=True, text=True, timeout=5,
                                creationflags=0x08000000 if __import__("os").name == "nt" else 0)
             nvenc_ok = "h264_nvenc" in (r.stdout or "")
             if nvenc_ok:
                 # Quick test: 1 frame encode
                 t = subprocess.run(
-                    ["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=duration=0.1:size=1280x720:rate=1",
+                    [ffmpeg_cmd(), "-y", "-f", "lavfi", "-i", "testsrc=duration=0.1:size=1280x720:rate=1",
                      "-c:v", "h264_nvenc", "-frames:v", "1", "-f", "null", "-"],
                     capture_output=True, text=True, timeout=10,
                     creationflags=0x08000000 if __import__("os").name == "nt" else 0)

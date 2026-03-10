@@ -23,6 +23,8 @@ try:
 except ImportError:
     WHISPER_AVAILABLE = False
 
+from modules.runtime_paths import ffprobe_cmd
+
 
 class VideoAnalyzer:
     """Manages video analysis operations including heatmap detection and transcription.
@@ -340,7 +342,7 @@ class VideoAnalyzer:
         """Get video duration using ffprobe (much faster than pydub)"""
         try:
             cmd = [
-                'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                ffprobe_cmd(), '-v', 'error', '-show_entries', 'format=duration',
                 '-of', 'default=noprint_wrappers=1:nokey=1', video_path
             ]
             result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, creationflags=0x08000000)
