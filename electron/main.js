@@ -12,6 +12,11 @@ const FRONTEND_URL = "http://127.0.0.1:3000";
 
 const SETTINGS_PATH = path.join(__dirname, "..", "config", "settings.json");
 
+function npmCommand() {
+  // On Windows, npm is typically npm.cmd (spawn("npm") can fail with ENOENT)
+  return process.platform === "win32" ? "npm.cmd" : "npm";
+}
+
 function ensureSettingsFile() {
   try {
     const dir = path.dirname(SETTINGS_PATH);
@@ -117,7 +122,7 @@ function startFrontend() {
   const frontendDir = path.join(projectRoot, "frontend");
 
   // Use local npm on PATH
-  feProcess = spawn("npm", ["run", "dev"], {
+  feProcess = spawn(npmCommand(), ["run", "dev"], {
     cwd: frontendDir,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
