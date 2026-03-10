@@ -108,18 +108,11 @@ export default function ProjectPage() {
         const status = await getExportStatus(job_id);
         setExportProgress({ progress: status.progress, message: status.message, logs: status.logs });
         if (status.status === "done" && status.clip_path) {
-          const filename = status.clip_path.replace("clips/", "");
-          const downloadName = (clip.title || `clip_${index + 1}`).replace(/[^a-zA-Z0-9 _-]/g, "").trim().slice(0, 50) + ".mp4";
-          const url = playClipUrl(id, filename, true);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = downloadName;
-          a.style.display = "none";
-          document.body.appendChild(a);
-          a.click();
-          setTimeout(() => document.body.removeChild(a), 100);
+          // Desktop app: export happens server-side and is copied to Output Folder (if configured).
+          // Avoid triggering browser/IDM downloads.
           setExportProgress(null);
           loadProject();
+          await modal.alert("Export selesai. File disimpan di folder output yang Anda pilih (Settings → Output Folder).", { title: "Export selesai" });
           return;
         }
         if (status.status === "error") {

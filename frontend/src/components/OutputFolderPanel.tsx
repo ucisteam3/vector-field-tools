@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
-import { FolderOpen, Save } from "lucide-react";
+import { FolderOpen } from "lucide-react";
 
 export default function OutputFolderPanel() {
   const [path, setPath] = useState<string>("");

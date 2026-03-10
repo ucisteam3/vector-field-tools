@@ -5,6 +5,8 @@ Parallel export via ThreadPoolExecutor (max_workers = min(4, cpu_count)) for bat
 """
 
 import os
+import json
+import shutil
 from pathlib import Path
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -152,6 +154,23 @@ def export_clip(
                 safe_topic = f"clip_{clip_index + 1}"
             filename = f"{safe_topic}.mp4"
             if (clips_dir / filename).exists():
+                # Desktop output folder integration (config/settings.json)
+                try:
+                    settings_path = PROJECT_ROOT / "config" / "settings.json"
+                    if settings_path.exists():
+                        cfg = json.loads(settings_path.read_text(encoding="utf-8"))
+                    else:
+                        cfg = {}
+                    out_folder = str((cfg or {}).get("output_folder") or "").strip()
+                    if out_folder:
+                        out_dir = Path(out_folder)
+                        out_dir.mkdir(parents=True, exist_ok=True)
+                        src = clips_dir / filename
+                        dst = out_dir / filename
+                        shutil.copy2(src, dst)
+                        clips[clip_index]["exported_to"] = str(dst)
+                except Exception as e:
+                    print(f"[CLIP SERVICE] Output folder copy failed: {e}")
                 clips[clip_index]["clip_path"] = f"clips/{filename}"
                 update_project(project_id, clips=clips)
                 return filename

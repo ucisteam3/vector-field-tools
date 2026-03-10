@@ -9,12 +9,14 @@ import subprocess
 import sys
 from typing import Tuple
 
+from modules.runtime_paths import ffmpeg_cmd, ffprobe_cmd
+
 
 def get_video_info(path: str) -> Tuple[int, int, float]:
     """Get video width, height, fps via ffprobe. Returns (w, h, fps)."""
     try:
         r = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+            [ffprobe_cmd(), "-v", "error", "-select_streams", "v:0",
              "-show_entries", "stream=width,height,r_frame_rate", "-of", "csv=p=0", path],
             capture_output=True, text=True, timeout=10,
             creationflags=0x08000000 if os.name == "nt" else 0,
@@ -37,7 +39,7 @@ def gpu_available() -> bool:
     """Detect GPU via ffmpeg -hwaccels."""
     try:
         r = subprocess.run(
-            ["ffmpeg", "-hwaccels"],
+            [ffmpeg_cmd(), "-hwaccels"],
             capture_output=True, text=True, timeout=5,
             creationflags=0x08000000 if os.name == "nt" else 0,
         )
@@ -56,7 +58,7 @@ def ffmpeg_has_filters(*names: str) -> dict:
     if _ffmpeg_filters_cache is None:
         try:
             r = subprocess.run(
-                ["ffmpeg", "-filters"],
+                [ffmpeg_cmd(), "-filters"],
                 capture_output=True, text=True, timeout=10,
                 creationflags=0x08000000 if os.name == "nt" else 0,
             )
