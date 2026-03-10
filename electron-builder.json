@@ -1,0 +1,37 @@
+{
+  "appId": "com.heatmap5.desktop",
+  "productName": "HEATMAP5",
+  "directories": {
+    "output": "dist-portable"
+  },
+  "files": [
+    "electron/**/*",
+    "package.json"
+  ],
+  "extraResources": [
+    {
+      "from": "portable-resources/backend",
+      "to": "backend"
+    },
+    {
+      "from": "portable-resources/frontend",
+      "to": "frontend"
+    },
+    {
+      "from": "runtime",
+      "to": "runtime"
+    },
+    {
+      "from": "config",
+      "to": "config"
+    }
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "dir"
+      }
+    ]
+  }
+}
+

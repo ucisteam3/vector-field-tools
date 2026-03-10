@@ -17,6 +17,26 @@ function npmCommand() {
   return process.platform === "win32" ? "npm.cmd" : "npm";
 }
 
+function nodeCommandArgs(scriptPath) {
+  // Use Electron's embedded Node runtime in packaged apps
+  // https://www.electronjs.org/docs/latest/api/process#processargv
+  // `process.execPath --run-as-node <script>`
+  return [process.execPath, ["--run-as-node", scriptPath]];
+}
+
+function isPackaged() {
+  try {
+    return app.isPackaged;
+  } catch {
+    return false;
+  }
+}
+
+function resourcesDir() {
+  // In packaged builds, extraResources live in process.resourcesPath
+  return process.resourcesPath;
+}
+
 function ensureSettingsFile() {
   try {
     const dir = path.dirname(SETTINGS_PATH);
@@ -116,6 +136,23 @@ function startPythonBackend() {
   });
 }
 
+function startBackendPackaged() {
+  if (pyProcess) return;
+  const exeName = process.platform === "win32" ? "heatmap5_backend.exe" : "heatmap5_backend";
+  const exePath = path.join(resourcesDir(), "backend", exeName);
+  pyProcess = spawn(exePath, [], {
+    cwd: path.dirname(exePath),
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  });
+  pyProcess.stdout.on("data", (data) => console.log(`[PY] ${data.toString().trimEnd()}`));
+  pyProcess.stderr.on("data", (data) => console.error(`[PY] ${data.toString().trimEnd()}`));
+  pyProcess.on("exit", (code) => {
+    console.log(`[PY] exited with code ${code}`);
+    pyProcess = null;
+  });
+}
+
 function startFrontend() {
   if (feProcess) return;
   const projectRoot = path.resolve(__dirname, "..");
@@ -140,6 +177,31 @@ function startFrontend() {
   });
 }
 
+function startFrontendPackaged() {
+  if (feProcess) return;
+  // We package Next.js standalone server into: resources/frontend/server.js
+  const feDir = path.join(resourcesDir(), "frontend");
+  const serverJs = path.join(feDir, "server.js");
+  const [nodeExe, nodeArgs] = nodeCommandArgs(serverJs);
+  feProcess = spawn(nodeExe, nodeArgs, {
+    cwd: feDir,
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+    env: {
+      ...process.env,
+      NODE_ENV: "production",
+      PORT: "3000",
+      HOSTNAME: "127.0.0.1",
+    },
+  });
+  feProcess.stdout.on("data", (data) => console.log(`[FE] ${data.toString().trimEnd()}`));
+  feProcess.stderr.on("data", (data) => console.error(`[FE] ${data.toString().trimEnd()}`));
+  feProcess.on("exit", (code) => {
+    console.log(`[FE] exited with code ${code}`);
+    feProcess = null;
+  });
+}
+
 async function ensureBackendRunning() {
   try {
     await waitForUrl(`${BACKEND_URL}/cookies_status`, 1500);
@@ -148,7 +210,8 @@ async function ensureBackendRunning() {
   } catch {
     // not running
   }
-  startPythonBackend();
+  if (isPackaged()) startBackendPackaged();
+  else startPythonBackend();
 }
 
 async function ensureFrontendRunning() {
@@ -159,7 +222,8 @@ async function ensureFrontendRunning() {
   } catch {
     // not running
   }
-  startFrontend();
+  if (isPackaged()) startFrontendPackaged();
+  else startFrontend();
 }
 
 async function createWindow() {

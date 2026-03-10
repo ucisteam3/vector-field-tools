@@ -4,9 +4,11 @@
   "version": "0.0.0",
   "main": "electron/main.js",
   "scripts": {
-    "start": "electron electron/main.js"
+    "start": "electron electron/main.js",
+    "build:portable": "electron-builder --dir"
   },
   "devDependencies": {
-    "electron": "^28.3.3"
+    "electron": "^28.3.3",
+    "electron-builder": "^25.1.8"
   }
 }
