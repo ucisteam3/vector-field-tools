@@ -1,4 +1,4 @@
-﻿const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const http = require("http");
@@ -85,6 +85,28 @@ function startFrontend() {
   });
 }
 
+async function ensureBackendRunning() {
+  try {
+    await waitForUrl(`${BACKEND_URL}/cookies_status`, 1500);
+    console.log("[PY] Backend already running, skip spawn.");
+    return;
+  } catch {
+    // not running
+  }
+  startPythonBackend();
+}
+
+async function ensureFrontendRunning() {
+  try {
+    await waitForUrl(FRONTEND_URL, 1500);
+    console.log("[FE] Frontend already running, skip spawn.");
+    return;
+  } catch {
+    // not running
+  }
+  startFrontend();
+}
+
 async function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
@@ -130,8 +152,8 @@ function stopChild(proc, name) {
 }
 
 app.whenReady().then(async () => {
-  startPythonBackend();
-  startFrontend();
+  await ensureBackendRunning();
+  await ensureFrontendRunning();
   await createWindow();
 
   app.on("activate", () => {
