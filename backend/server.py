@@ -578,9 +578,12 @@ def runtime_whisper_download(payload: WhisperDownloadPayload):
 
 @app.post("/runtime/check_updates")
 def runtime_check_updates():
-    """Check/install runtime updates (FFmpeg)."""
+    """Refresh runtime status (no downloads in self-contained mode)."""
     from modules.runtime_manager import RuntimeManager
-    RuntimeManager.ensure_ffmpeg_installed(allow_update=True, force_update_check=True)
+    try:
+        RuntimeManager.ensure_ffmpeg_installed(allow_update=False, force_update_check=False)
+    except Exception:
+        pass
     return {"ok": True, "status": RuntimeManager.get_status()}
 
 

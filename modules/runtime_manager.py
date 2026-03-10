@@ -18,8 +18,6 @@ import os
 import platform
 import subprocess
 import time
-import urllib.request
-import zipfile
 
 try:
     import hashlib
@@ -94,9 +92,8 @@ class RuntimeManager:
     manifest_path: Path = RUNTIME_DIR / "manifest.json"
     update_interval_sec: int = 24 * 3600
 
-    # Default FFmpeg sources (Windows static builds)
-    ffmpeg_zip_url: str = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-    ffmpeg_remote_version_url: str = "https://www.gyan.dev/ffmpeg/builds/release-version"
+    # FFmpeg is REQUIRED and must be bundled with the app (runtime/bin/*).
+    # No network downloads for FFmpeg in "fully self-contained" mode.
 
     @classmethod
     def _emit(cls, progress_callback, *, stage: str, pct: Optional[int] = None, message: str = "", extra: Optional[dict] = None) -> None:
@@ -147,57 +144,6 @@ class RuntimeManager:
         cls.manifest_path.write_text(json.dumps(merged, indent=2), encoding="utf-8")
         return merged
 
-    # ---------------------------
-    # Safe download helpers
-    # ---------------------------
-    @classmethod
-    def _download_file(cls, url: str, dest: Path, *, progress_callback=None) -> Path:
-        """
-        Download into runtime/downloads then return the path.
-        Uses atomic temp + rename.
-        """
-        cls.initialize()
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        tmp = dest.with_suffix(dest.suffix + ".part")
-        if tmp.exists():
-            try:
-                tmp.unlink()
-            except Exception:
-                pass
-
-        cls._emit(progress_callback, stage="downloading", pct=0, message=f"Downloading: {url}")
-
-        req = urllib.request.Request(url, headers={"User-Agent": "HEATMAP5-RuntimeManager/1.0"})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            total = int(r.headers.get("Content-Length") or 0)
-            read = 0
-            chunk = 1024 * 256
-            with open(tmp, "wb") as f:
-                while True:
-                    b = r.read(chunk)
-                    if not b:
-                        break
-                    f.write(b)
-                    read += len(b)
-                    if total > 0:
-                        pct = int(min(99, (read / total) * 100))
-                        cls._emit(progress_callback, stage="downloading", pct=pct, message=f"Downloading... {pct}%")
-
-        if tmp.stat().st_size <= 0:
-            raise RuntimeError("Download failed (empty file)")
-        try:
-            tmp.replace(dest)
-        except Exception:
-            # fallback copy
-            data = tmp.read_bytes()
-            dest.write_bytes(data)
-            try:
-                tmp.unlink()
-            except Exception:
-                pass
-        cls._emit(progress_callback, stage="downloading", pct=100, message="Download complete")
-        return dest
-
     @classmethod
     def _sha256(cls, path: Path) -> Optional[str]:
         if hashlib is None:
@@ -209,7 +155,7 @@ class RuntimeManager:
         return h.hexdigest()
 
     # ---------------------------
-    # FFmpeg auto install/update
+    # FFmpeg version detection (bundled)
     # ---------------------------
     @classmethod
     def _detect_local_ffmpeg_version(cls) -> str:
@@ -240,101 +186,17 @@ class RuntimeManager:
         return tuple(nums[:3] + [0] * max(0, 3 - len(nums)))
 
     @classmethod
-    def _get_remote_ffmpeg_version(cls) -> str:
-        try:
-            req = urllib.request.Request(cls.ffmpeg_remote_version_url, headers={"User-Agent": "HEATMAP5-RuntimeManager/1.0"})
-            with urllib.request.urlopen(req, timeout=15) as r:
-                txt = (r.read() or b"").decode("utf-8", errors="ignore").strip()
-            # Typically returns like "2024-xx-xx-git-..." or "6.1"
-            # Prefer first numeric version seen.
-            import re
-            m = re.search(r"([0-9]+(?:\.[0-9]+){0,2})", txt)
-            return m.group(1) if m else txt
-        except Exception:
-            return ""
-
-    @classmethod
-    def _extract_ffmpeg_binaries_from_zip(cls, zip_path: Path, *, progress_callback=None) -> None:
-        cls._emit(progress_callback, stage="extracting", pct=0, message="Extracting FFmpeg...")
-        with zipfile.ZipFile(zip_path, "r") as z:
-            names = z.namelist()
-            ffmpeg_member = next((n for n in names if n.lower().endswith("/bin/ffmpeg.exe") or n.lower().endswith("\\bin\\ffmpeg.exe")), None)
-            ffprobe_member = next((n for n in names if n.lower().endswith("/bin/ffprobe.exe") or n.lower().endswith("\\bin\\ffprobe.exe")), None)
-            if not ffmpeg_member or not ffprobe_member:
-                # Some zips contain ffmpeg.exe directly under bin/
-                ffmpeg_member = ffmpeg_member or next((n for n in names if n.lower().endswith("ffmpeg.exe")), None)
-                ffprobe_member = ffprobe_member or next((n for n in names if n.lower().endswith("ffprobe.exe")), None)
-            if not ffmpeg_member or not ffprobe_member:
-                raise RuntimeError("FFmpeg zip invalid: missing ffmpeg.exe/ffprobe.exe")
-
-            cls.bin_dir.mkdir(parents=True, exist_ok=True)
-            z.extract(ffmpeg_member, path=cls.temp_dir)
-            z.extract(ffprobe_member, path=cls.temp_dir)
-
-            src_ffmpeg = cls.temp_dir / ffmpeg_member
-            src_ffprobe = cls.temp_dir / ffprobe_member
-            if not src_ffmpeg.exists() or not src_ffprobe.exists():
-                raise RuntimeError("FFmpeg zip extract failed")
-
-            # Move into runtime/bin (replace)
-            dst_ffmpeg = cls.ffmpeg_path
-            dst_ffprobe = cls.ffprobe_path
-            dst_ffmpeg.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                src_ffmpeg.replace(dst_ffmpeg)
-            except Exception:
-                dst_ffmpeg.write_bytes(src_ffmpeg.read_bytes())
-            try:
-                src_ffprobe.replace(dst_ffprobe)
-            except Exception:
-                dst_ffprobe.write_bytes(src_ffprobe.read_bytes())
-
-        cls._emit(progress_callback, stage="extracting", pct=100, message="FFmpeg extracted")
-
-    @classmethod
-    def ensure_ffmpeg_installed(cls, *, progress_callback=None, allow_update: bool = True, force_update_check: bool = False) -> dict:
+    def ensure_ffmpeg_installed(cls, *, progress_callback=None, allow_update: bool = False, force_update_check: bool = False) -> dict:
         """
-        Ensure FFmpeg binaries exist. If missing -> auto-download/install.
-        If allow_update -> check remote version every 24h and update if newer.
-        Returns manifest after changes.
+        Fully self-contained mode:
+          - FFmpeg MUST be present in runtime/bin (bundled with app)
+          - No network downloads/updates
         """
         cls.initialize()
-        manifest = cls.load_manifest()
-
-        # Install if missing
         if not cls.ffmpeg_path.exists() or not cls.ffprobe_path.exists():
-            cls._emit(progress_callback, stage="ffmpeg", pct=0, message="FFmpeg missing. Installing...")
-            zip_name = "ffmpeg-release-essentials.zip"
-            zip_path = cls.downloads_dir / zip_name
-            cls._download_file(cls.ffmpeg_zip_url, zip_path, progress_callback=progress_callback)
-            cls._extract_ffmpeg_binaries_from_zip(zip_path, progress_callback=progress_callback)
-            ver = cls._detect_local_ffmpeg_version()
-            manifest = cls.save_manifest({"ffmpeg_version": ver})
-            cls._emit(progress_callback, stage="ffmpeg", pct=100, message=f"FFmpeg installed ({ver or 'unknown'})")
-
-        # Update check schedule
-        now = int(time.time())
-        last = int(manifest.get("last_update_check_ts") or 0)
-        due = force_update_check or (now - last >= cls.update_interval_sec)
-        if allow_update and due:
-            cls._emit(progress_callback, stage="update_check", pct=0, message="Checking FFmpeg updates...")
-            local_v = manifest.get("ffmpeg_version") or cls._detect_local_ffmpeg_version()
-            remote_v = cls._get_remote_ffmpeg_version()
-            manifest = cls.save_manifest({"last_update_check_ts": now, "ffmpeg_version": local_v})
-
-            if remote_v and local_v and cls._version_tuple(remote_v) > cls._version_tuple(local_v):
-                cls._emit(progress_callback, stage="ffmpeg_update", pct=0, message=f"Updating FFmpeg {local_v} -> {remote_v}")
-                zip_name = "ffmpeg-release-essentials.zip"
-                zip_path = cls.downloads_dir / zip_name
-                cls._download_file(cls.ffmpeg_zip_url, zip_path, progress_callback=progress_callback)
-                cls._extract_ffmpeg_binaries_from_zip(zip_path, progress_callback=progress_callback)
-                new_v = cls._detect_local_ffmpeg_version() or remote_v
-                manifest = cls.save_manifest({"ffmpeg_version": new_v})
-                cls._emit(progress_callback, stage="ffmpeg_update", pct=100, message=f"FFmpeg updated ({new_v})")
-            else:
-                cls._emit(progress_callback, stage="update_check", pct=100, message="FFmpeg up to date")
-
-        return manifest
+            raise RuntimeError("FFmpeg runtime missing")
+        ver = cls._detect_local_ffmpeg_version()
+        return cls.save_manifest({"ffmpeg_version": ver})
 
     @classmethod
     def initialize(cls) -> None:
@@ -717,7 +579,8 @@ class RuntimeManager:
         Current scope:
           - FFmpeg update check (24h)
         """
-        return cls.ensure_ffmpeg_installed(progress_callback=progress_callback, allow_update=True, force_update_check=False)
+        # In fully self-contained mode we do not download/update FFmpeg automatically.
+        return cls.ensure_ffmpeg_installed(progress_callback=progress_callback, allow_update=False, force_update_check=False)
 
     # ---------------------------
     # First run experience
