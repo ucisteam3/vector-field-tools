@@ -6,6 +6,7 @@ import AppSidebar from "@/components/AppSidebar";
 import ExportSettingsPanel from "@/components/ExportSettingsPanel";
 import ApiKeysPanel from "@/components/ApiKeysPanel";
 import CookiesSettingsPanel from "@/components/CookiesSettingsPanel";
+import OutputFolderPanel from "@/components/OutputFolderPanel";
 import { useAppSettings } from "@/lib/settings-store";
 
 function AccordionSection({
@@ -42,6 +43,7 @@ export default function SettingsPage() {
   const [openExport, setOpenExport] = useState(false);
   const [openKeys, setOpenKeys] = useState(false);
   const [openCookies, setOpenCookies] = useState(false);
+  const [openOutput, setOpenOutput] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -90,6 +92,15 @@ export default function SettingsPage() {
               onToggle={() => setOpenCookies((v) => !v)}
             >
               <CookiesSettingsPanel />
+            </AccordionSection>
+
+            <AccordionSection
+              title="Output Folder"
+              description="Pilih folder penyimpanan hasil export klip (Desktop app)."
+              open={openOutput}
+              onToggle={() => setOpenOutput((v) => !v)}
+            >
+              <OutputFolderPanel />
             </AccordionSection>
           </div>
         </div>

@@ -1,13 +1,63 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const http = require("http");
+const fs = require("fs");
 
 let pyProcess = null;
 let feProcess = null;
 
 const BACKEND_URL = "http://127.0.0.1:8001";
 const FRONTEND_URL = "http://127.0.0.1:3000";
+
+const SETTINGS_PATH = path.join(__dirname, "..", "config", "settings.json");
+
+function ensureSettingsFile() {
+  try {
+    const dir = path.dirname(SETTINGS_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(SETTINGS_PATH)) {
+      fs.writeFileSync(SETTINGS_PATH, JSON.stringify({ output_folder: "" }, null, 2));
+    }
+  } catch (e) {
+    console.error(`[SETTINGS] Failed to init settings file: ${String(e)}`);
+  }
+}
+
+function readSettings() {
+  ensureSettingsFile();
+  try {
+    return JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf-8"));
+  } catch {
+    return { output_folder: "" };
+  }
+}
+
+function writeSettings(next) {
+  ensureSettingsFile();
+  const prev = readSettings();
+  const safe = { ...(prev && typeof prev === "object" ? prev : {}), output_folder: String(next?.output_folder || "") };
+  fs.writeFileSync(SETTINGS_PATH, JSON.stringify(safe, null, 2));
+  return safe;
+}
+
+ipcMain.handle("select-output-folder", async () => {
+  ensureSettingsFile();
+  const result = await dialog.showOpenDialog({
+    properties: ["openDirectory"],
+  });
+  if (result.canceled) return null;
+  const folder = result.filePaths[0];
+  const settings = readSettings();
+  settings.output_folder = folder;
+  writeSettings(settings);
+  return folder;
+});
+
+ipcMain.handle("get-output-folder", async () => {
+  const settings = readSettings();
+  return settings.output_folder || "";
+});
 
 function waitForUrl(url, timeoutMs = 60000) {
   const start = Date.now();
