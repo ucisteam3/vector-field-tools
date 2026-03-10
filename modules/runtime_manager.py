@@ -13,11 +13,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import json
 import os
 import platform
-import shutil
 import subprocess
 import time
+import urllib.request
+import zipfile
+
+try:
+    import hashlib
+except Exception:
+    hashlib = None  # type: ignore
 
 try:
     import psutil  # type: ignore
@@ -82,6 +89,252 @@ class RuntimeManager:
     # --- Runtime binaries ---
     ffmpeg_path: Path = FFMPEG_PATH
     ffprobe_path: Path = FFPROBE_PATH
+
+    # --- Manifest / update scheduling ---
+    manifest_path: Path = RUNTIME_DIR / "manifest.json"
+    update_interval_sec: int = 24 * 3600
+
+    # Default FFmpeg sources (Windows static builds)
+    ffmpeg_zip_url: str = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+    ffmpeg_remote_version_url: str = "https://www.gyan.dev/ffmpeg/builds/release-version"
+
+    @classmethod
+    def _emit(cls, progress_callback, *, stage: str, pct: Optional[int] = None, message: str = "", extra: Optional[dict] = None) -> None:
+        """Send progress events to UI (best-effort)."""
+        if not progress_callback or not callable(progress_callback):
+            return
+        payload = {"stage": stage, "message": message}
+        if pct is not None:
+            payload["pct"] = int(max(0, min(100, pct)))
+        if extra:
+            payload.update(extra)
+        try:
+            progress_callback(payload)
+        except Exception:
+            pass
+
+    # ---------------------------
+    # Manifest
+    # ---------------------------
+    @classmethod
+    def _default_manifest(cls) -> dict:
+        return {
+            "ffmpeg_version": "",
+            "whisper_models": [],
+            "cuda_installed": False,
+            "amd_installed": False,
+            "last_update_check_ts": 0,
+        }
+
+    @classmethod
+    def load_manifest(cls) -> dict:
+        cls.initialize()
+        try:
+            if cls.manifest_path.exists():
+                data = json.loads(cls.manifest_path.read_text(encoding="utf-8")) or {}
+                if isinstance(data, dict):
+                    return {**cls._default_manifest(), **data}
+        except Exception:
+            pass
+        return cls._default_manifest()
+
+    @classmethod
+    def save_manifest(cls, patch: dict) -> dict:
+        cls.initialize()
+        prev = cls.load_manifest()
+        safe_patch = patch if isinstance(patch, dict) else {}
+        merged = {**prev, **safe_patch}
+        cls.manifest_path.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+        return merged
+
+    # ---------------------------
+    # Safe download helpers
+    # ---------------------------
+    @classmethod
+    def _download_file(cls, url: str, dest: Path, *, progress_callback=None) -> Path:
+        """
+        Download into runtime/downloads then return the path.
+        Uses atomic temp + rename.
+        """
+        cls.initialize()
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_suffix(dest.suffix + ".part")
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except Exception:
+                pass
+
+        cls._emit(progress_callback, stage="downloading", pct=0, message=f"Downloading: {url}")
+
+        req = urllib.request.Request(url, headers={"User-Agent": "HEATMAP5-RuntimeManager/1.0"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            total = int(r.headers.get("Content-Length") or 0)
+            read = 0
+            chunk = 1024 * 256
+            with open(tmp, "wb") as f:
+                while True:
+                    b = r.read(chunk)
+                    if not b:
+                        break
+                    f.write(b)
+                    read += len(b)
+                    if total > 0:
+                        pct = int(min(99, (read / total) * 100))
+                        cls._emit(progress_callback, stage="downloading", pct=pct, message=f"Downloading... {pct}%")
+
+        if tmp.stat().st_size <= 0:
+            raise RuntimeError("Download failed (empty file)")
+        try:
+            tmp.replace(dest)
+        except Exception:
+            # fallback copy
+            data = tmp.read_bytes()
+            dest.write_bytes(data)
+            try:
+                tmp.unlink()
+            except Exception:
+                pass
+        cls._emit(progress_callback, stage="downloading", pct=100, message="Download complete")
+        return dest
+
+    @classmethod
+    def _sha256(cls, path: Path) -> Optional[str]:
+        if hashlib is None:
+            return None
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    # ---------------------------
+    # FFmpeg auto install/update
+    # ---------------------------
+    @classmethod
+    def _detect_local_ffmpeg_version(cls) -> str:
+        """
+        Detect local version via `ffmpeg -version`.
+        Returns a short version like '6.1' when possible.
+        """
+        try:
+            r = subprocess.run(
+                [ffmpeg_cmd(), "-version"],
+                capture_output=True,
+                text=True,
+                timeout=8,
+                creationflags=0x08000000 if os.name == "nt" else 0,
+            )
+            out = (r.stdout or "") + (r.stderr or "")
+            # Example: "ffmpeg version 6.1.1-..."
+            import re
+            m = re.search(r"ffmpeg version\s+([0-9]+(?:\.[0-9]+){0,2})", out, re.IGNORECASE)
+            return m.group(1) if m else ""
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _version_tuple(v: str) -> tuple:
+        import re
+        nums = [int(x) for x in re.findall(r"\d+", v or "")]
+        return tuple(nums[:3] + [0] * max(0, 3 - len(nums)))
+
+    @classmethod
+    def _get_remote_ffmpeg_version(cls) -> str:
+        try:
+            req = urllib.request.Request(cls.ffmpeg_remote_version_url, headers={"User-Agent": "HEATMAP5-RuntimeManager/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                txt = (r.read() or b"").decode("utf-8", errors="ignore").strip()
+            # Typically returns like "2024-xx-xx-git-..." or "6.1"
+            # Prefer first numeric version seen.
+            import re
+            m = re.search(r"([0-9]+(?:\.[0-9]+){0,2})", txt)
+            return m.group(1) if m else txt
+        except Exception:
+            return ""
+
+    @classmethod
+    def _extract_ffmpeg_binaries_from_zip(cls, zip_path: Path, *, progress_callback=None) -> None:
+        cls._emit(progress_callback, stage="extracting", pct=0, message="Extracting FFmpeg...")
+        with zipfile.ZipFile(zip_path, "r") as z:
+            names = z.namelist()
+            ffmpeg_member = next((n for n in names if n.lower().endswith("/bin/ffmpeg.exe") or n.lower().endswith("\\bin\\ffmpeg.exe")), None)
+            ffprobe_member = next((n for n in names if n.lower().endswith("/bin/ffprobe.exe") or n.lower().endswith("\\bin\\ffprobe.exe")), None)
+            if not ffmpeg_member or not ffprobe_member:
+                # Some zips contain ffmpeg.exe directly under bin/
+                ffmpeg_member = ffmpeg_member or next((n for n in names if n.lower().endswith("ffmpeg.exe")), None)
+                ffprobe_member = ffprobe_member or next((n for n in names if n.lower().endswith("ffprobe.exe")), None)
+            if not ffmpeg_member or not ffprobe_member:
+                raise RuntimeError("FFmpeg zip invalid: missing ffmpeg.exe/ffprobe.exe")
+
+            cls.bin_dir.mkdir(parents=True, exist_ok=True)
+            z.extract(ffmpeg_member, path=cls.temp_dir)
+            z.extract(ffprobe_member, path=cls.temp_dir)
+
+            src_ffmpeg = cls.temp_dir / ffmpeg_member
+            src_ffprobe = cls.temp_dir / ffprobe_member
+            if not src_ffmpeg.exists() or not src_ffprobe.exists():
+                raise RuntimeError("FFmpeg zip extract failed")
+
+            # Move into runtime/bin (replace)
+            dst_ffmpeg = cls.ffmpeg_path
+            dst_ffprobe = cls.ffprobe_path
+            dst_ffmpeg.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                src_ffmpeg.replace(dst_ffmpeg)
+            except Exception:
+                dst_ffmpeg.write_bytes(src_ffmpeg.read_bytes())
+            try:
+                src_ffprobe.replace(dst_ffprobe)
+            except Exception:
+                dst_ffprobe.write_bytes(src_ffprobe.read_bytes())
+
+        cls._emit(progress_callback, stage="extracting", pct=100, message="FFmpeg extracted")
+
+    @classmethod
+    def ensure_ffmpeg_installed(cls, *, progress_callback=None, allow_update: bool = True, force_update_check: bool = False) -> dict:
+        """
+        Ensure FFmpeg binaries exist. If missing -> auto-download/install.
+        If allow_update -> check remote version every 24h and update if newer.
+        Returns manifest after changes.
+        """
+        cls.initialize()
+        manifest = cls.load_manifest()
+
+        # Install if missing
+        if not cls.ffmpeg_path.exists() or not cls.ffprobe_path.exists():
+            cls._emit(progress_callback, stage="ffmpeg", pct=0, message="FFmpeg missing. Installing...")
+            zip_name = "ffmpeg-release-essentials.zip"
+            zip_path = cls.downloads_dir / zip_name
+            cls._download_file(cls.ffmpeg_zip_url, zip_path, progress_callback=progress_callback)
+            cls._extract_ffmpeg_binaries_from_zip(zip_path, progress_callback=progress_callback)
+            ver = cls._detect_local_ffmpeg_version()
+            manifest = cls.save_manifest({"ffmpeg_version": ver})
+            cls._emit(progress_callback, stage="ffmpeg", pct=100, message=f"FFmpeg installed ({ver or 'unknown'})")
+
+        # Update check schedule
+        now = int(time.time())
+        last = int(manifest.get("last_update_check_ts") or 0)
+        due = force_update_check or (now - last >= cls.update_interval_sec)
+        if allow_update and due:
+            cls._emit(progress_callback, stage="update_check", pct=0, message="Checking FFmpeg updates...")
+            local_v = manifest.get("ffmpeg_version") or cls._detect_local_ffmpeg_version()
+            remote_v = cls._get_remote_ffmpeg_version()
+            manifest = cls.save_manifest({"last_update_check_ts": now, "ffmpeg_version": local_v})
+
+            if remote_v and local_v and cls._version_tuple(remote_v) > cls._version_tuple(local_v):
+                cls._emit(progress_callback, stage="ffmpeg_update", pct=0, message=f"Updating FFmpeg {local_v} -> {remote_v}")
+                zip_name = "ffmpeg-release-essentials.zip"
+                zip_path = cls.downloads_dir / zip_name
+                cls._download_file(cls.ffmpeg_zip_url, zip_path, progress_callback=progress_callback)
+                cls._extract_ffmpeg_binaries_from_zip(zip_path, progress_callback=progress_callback)
+                new_v = cls._detect_local_ffmpeg_version() or remote_v
+                manifest = cls.save_manifest({"ffmpeg_version": new_v})
+                cls._emit(progress_callback, stage="ffmpeg_update", pct=100, message=f"FFmpeg updated ({new_v})")
+            else:
+                cls._emit(progress_callback, stage="update_check", pct=100, message="FFmpeg up to date")
+
+        return manifest
 
     @classmethod
     def initialize(cls) -> None:
@@ -156,8 +409,27 @@ class RuntimeManager:
         cls.initialize()
         root = whisper_download_root()
         # CPU device is enough to trigger download; avoids requiring CUDA just to fetch model.
+        cls._emit(None, stage="whisper", pct=0, message=f"Downloading Whisper model: {model_name}")
         _ = whisper.load_model(model_name, device="cpu", download_root=root)
+        # Update manifest
+        man = cls.load_manifest()
+        models = set([str(x) for x in (man.get("whisper_models") or []) if str(x).strip()])
+        models.add(model_name)
+        cls.save_manifest({"whisper_models": sorted(models)})
         return cls.is_model_installed(model_name)
+
+    @classmethod
+    def ensure_whisper_model(cls, model_name: str, *, progress_callback=None) -> bool:
+        """Ensure selected whisper model exists locally; download if missing and update manifest."""
+        cls.initialize()
+        if model_name not in WHISPER_MODEL_OPTIONS:
+            raise ValueError(f"Unknown whisper model: {model_name}")
+        if cls.is_model_installed(model_name):
+            return True
+        cls._emit(progress_callback, stage="whisper", pct=0, message=f"Downloading Whisper model: {model_name}")
+        ok = cls.download_model(model_name)
+        cls._emit(progress_callback, stage="whisper", pct=100, message=f"Whisper model ready: {model_name}")
+        return ok
 
     # ---------------------------
     # GPU runtime management
@@ -186,6 +458,39 @@ class RuntimeManager:
             return False
 
     @classmethod
+    def detect_gpu_vendor(cls) -> Optional[str]:
+        """
+        Best-effort GPU vendor detection.
+        Returns 'nvidia' | 'amd' | None
+        """
+        # Prefer torch CUDA -> NVIDIA
+        try:
+            if torch is not None and bool(torch.cuda.is_available()):
+                return "nvidia"
+        except Exception:
+            pass
+
+        # Windows: query video controller names
+        if os.name == "nt":
+            try:
+                r = subprocess.run(
+                    ["wmic", "path", "win32_VideoController", "get", "name"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    creationflags=0x08000000,
+                )
+                out = (r.stdout or "") + (r.stderr or "")
+                lo = out.lower()
+                if "nvidia" in lo:
+                    return "nvidia"
+                if "amd" in lo or "radeon" in lo:
+                    return "amd"
+            except Exception:
+                pass
+        return None
+
+    @classmethod
     def download_cuda_runtime(cls) -> None:
         """
         Placeholder: create marker file for now.
@@ -199,6 +504,7 @@ class RuntimeManager:
                 "Place your CUDA runtime files into runtime/gpu/cuda/.\n",
                 encoding="utf-8",
             )
+        cls.save_manifest({"cuda_installed": cls.is_cuda_installed()})
 
     @classmethod
     def download_amd_runtime(cls) -> None:
@@ -211,6 +517,7 @@ class RuntimeManager:
                 "Place your AMD runtime files into runtime/gpu/amd/.\n",
                 encoding="utf-8",
             )
+        cls.save_manifest({"amd_installed": cls.is_amd_runtime_installed()})
 
     # ---------------------------
     # Hardware detection
@@ -374,6 +681,70 @@ class RuntimeManager:
             pass
 
         return {"deleted": deleted, "kept": kept, "errors": errors}
+
+    @classmethod
+    def cleanup_downloads(cls, *, older_than_hours: float = 24.0) -> Dict[str, Any]:
+        """Deletes files in runtime/downloads older than threshold."""
+        cls.initialize()
+        cutoff = time.time() - (older_than_hours * 3600.0)
+        deleted = 0
+        kept = 0
+        errors: List[str] = []
+        try:
+            for p in cls.downloads_dir.glob("**/*"):
+                try:
+                    if p.is_dir():
+                        continue
+                    st = p.stat()
+                    if st.st_mtime < cutoff:
+                        p.unlink(missing_ok=True)
+                        deleted += 1
+                    else:
+                        kept += 1
+                except Exception as e:
+                    errors.append(f"{p}: {e}")
+        except Exception as e:
+            errors.append(str(e))
+        return {"deleted": deleted, "kept": kept, "errors": errors}
+
+    # ---------------------------
+    # Periodic auto update check
+    # ---------------------------
+    @classmethod
+    def auto_update_tick(cls, *, progress_callback=None) -> dict:
+        """
+        Call this periodically (e.g. app start) to perform scheduled update checks.
+        Current scope:
+          - FFmpeg update check (24h)
+        """
+        return cls.ensure_ffmpeg_installed(progress_callback=progress_callback, allow_update=True, force_update_check=False)
+
+    # ---------------------------
+    # First run experience
+    # ---------------------------
+    @classmethod
+    def first_run_setup(cls, *, selected_whisper_model: str = "small", progress_callback=None) -> Dict[str, Any]:
+        """
+        One-shot setup:
+          - create dirs
+          - install/update FFmpeg
+          - ensure whisper model
+          - detect hardware
+          - recommend processing config
+          - cleanup temp/downloads
+        Returns RuntimeManager.get_status() after setup.
+        """
+        cls._emit(progress_callback, stage="init", pct=0, message="Initializing runtime...")
+        cls.initialize()
+        cls._emit(progress_callback, stage="init", pct=10, message="Ensuring FFmpeg...")
+        cls.ensure_ffmpeg_installed(progress_callback=progress_callback, allow_update=True, force_update_check=True)
+        cls._emit(progress_callback, stage="init", pct=60, message="Ensuring Whisper model...")
+        cls.ensure_whisper_model(selected_whisper_model, progress_callback=progress_callback)
+        cls._emit(progress_callback, stage="init", pct=80, message="Cleaning up old temp/downloads...")
+        cls.cleanup_temp(older_than_hours=24.0)
+        cls.cleanup_downloads(older_than_hours=24.0)
+        cls._emit(progress_callback, stage="init", pct=100, message="Runtime ready")
+        return cls.get_status()
 
     # ---------------------------
     # Frontend/API status payload
