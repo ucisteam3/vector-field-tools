@@ -1,0 +1,12 @@
+﻿{
+  "name": "heatmap5-desktop",
+  "private": true,
+  "version": "0.0.0",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron electron/main.js"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0"
+  }
+}
