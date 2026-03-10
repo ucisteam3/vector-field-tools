@@ -92,6 +92,13 @@ def run_ffmpeg(
     print(" ".join(cmd))
     print("")
 
+    # Force bundled FFmpeg when available
+    try:
+        if cmd and isinstance(cmd[0], str) and cmd[0].lower() in ["ffmpeg", "ffmpeg.exe"]:
+            cmd = [ffmpeg_cmd(), *cmd[1:]]
+    except Exception:
+        pass
+
     time_pat = None
     if encode_duration and encode_duration > 0:
         import re

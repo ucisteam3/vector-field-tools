@@ -6,6 +6,8 @@ try:
 except ImportError:
     WHISPER_AVAILABLE = False
 
+from modules.runtime_paths import whisper_download_root
+
 def seconds_to_ass_time(seconds):
     """Convert seconds to ASS format H:MM:SS.cs"""
     td = timedelta(seconds=seconds)
@@ -258,9 +260,8 @@ def generate_karaoke_ass(audio_path, output_ass_path, settings):
             model_name = settings.get("whisper_model", "small")
             
         print(f"[SUBTITLE] Loading '{model_name}' model (based on user Settings)...")
-        # Ensure models are saved locally in the project (portable)
-        models_root = os.path.join(os.getcwd(), "assets", "models")
-        os.makedirs(models_root, exist_ok=True)
+        # Ensure models are saved locally inside app runtime directory
+        models_root = whisper_download_root()
         
         # [FIX] Detect GPU for massive speedup (prevents 'mentok' / hang on CPU)
         import torch

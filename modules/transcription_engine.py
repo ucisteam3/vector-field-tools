@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from modules.runtime_paths import ffmpeg_cmd, whisper_download_root
+
 try:
     import whisper
     WHISPER_AVAILABLE = True
@@ -57,7 +59,7 @@ class TranscriptionEngine:
     
     def _get_whisper_model(self, model_name: str, device: str):
         """Load Whisper model once and cache; reuse on subsequent calls."""
-        return get_cached_whisper_model(model_name, device)
+        return get_cached_whisper_model(model_name, device, download_root=whisper_download_root())
     
     def transcribe_video_with_whisper(self, video_path):
         """
@@ -80,7 +82,7 @@ class TranscriptionEngine:
             
             # Use ffmpeg to extract audio (16k Hz mono for Whisper)
             cmd = [
-                'ffmpeg', '-y',
+                ffmpeg_cmd(), '-y',
                 '-i', str(video_path),
                 '-ar', '16000',
                 '-ac', '1', 
@@ -132,7 +134,7 @@ class TranscriptionEngine:
             audio_path = Path("temp") / "whisper_temp.wav"
             audio_path.parent.mkdir(parents=True, exist_ok=True)
             cmd = [
-                "ffmpeg", "-y", "-i", str(video_path),
+                ffmpeg_cmd(), "-y", "-i", str(video_path),
                 "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
                 str(audio_path)
             ]
@@ -142,12 +144,10 @@ class TranscriptionEngine:
 
             device = "cuda" if CUDA_AVAILABLE else "cpu"
             model_name = "medium" if device == "cuda" else "small"
-            models_root = os.path.join(os.getcwd(), "assets", "models")
-            os.makedirs(models_root, exist_ok=True)
             if self.parent and hasattr(self.parent, "progress_var"):
                 self.parent.progress_var.set(f"Whisper ({device}): Transcribing...")
             print(f"  [WHISPER] Using '{model_name}' on {device} (fp16)")
-            model = self._get_whisper_model(model_name, device, download_root=models_root)
+            model = get_cached_whisper_model(model_name, device, download_root=whisper_download_root())
             result = model.transcribe(str(audio_path), verbose=False, fp16=(device == "cuda"))
             try:
                 audio_path.unlink(missing_ok=True)

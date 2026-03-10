@@ -46,6 +46,31 @@ from backend.clip_service import export_clip, export_all_clips
 app = FastAPI(title="AI Video Clipper", version="1.0")
 
 
+def _settings_path() -> Path:
+    return PROJECT_ROOT / "config" / "settings.json"
+
+
+def _load_settings_file() -> dict:
+    try:
+        p = _settings_path()
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8")) or {}
+    except Exception:
+        pass
+    return {}
+
+
+def _save_settings_file(patch: dict) -> dict:
+    p = _settings_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    prev = _load_settings_file()
+    safe_prev = prev if isinstance(prev, dict) else {}
+    safe_patch = patch if isinstance(patch, dict) else {}
+    merged = {**safe_prev, **safe_patch}
+    p.write_text(json.dumps(merged, indent=2, ensure_ascii=False), encoding="utf-8")
+    return merged
+
+
 def _log_gpu_status():
     """Log GPU/CUDA and FFmpeg NVENC/NVDEC availability."""
     try:
@@ -443,6 +468,88 @@ def gpu_status():
         return out
     except ImportError:
         return {"cuda_available": False, "device_name": None, "pytorch_version": None}
+
+
+@app.get("/hardware_info")
+def hardware_info():
+    """
+    Hardware info for Desktop runtime UI.
+    Safe: works even if torch/psutil are missing.
+    """
+    import platform
+    info = {
+        "cpu": platform.processor() or platform.uname().processor or "Unknown",
+        "cpu_cores": os.cpu_count() or 0,
+        "ram_bytes": None,
+        "gpu": None,
+        "vram_bytes": None,
+        "cuda_available": False,
+        "tier": "POTATO",
+    }
+    try:
+        import psutil  # type: ignore
+        info["ram_bytes"] = int(psutil.virtual_memory().total)
+    except Exception:
+        pass
+    try:
+        import torch  # type: ignore
+        info["cuda_available"] = bool(torch.cuda.is_available())
+        if info["cuda_available"]:
+            info["gpu"] = torch.cuda.get_device_name(0) if torch.cuda.device_count() else None
+            try:
+                props = torch.cuda.get_device_properties(0)
+                info["vram_bytes"] = int(getattr(props, "total_memory", 0) or 0)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    cores = int(info.get("cpu_cores") or 0)
+    ram = int(info.get("ram_bytes") or 0)
+    vram = int(info.get("vram_bytes") or 0)
+    has_gpu = bool(info.get("cuda_available")) or bool(info.get("gpu"))
+
+    if cores >= 8 and ram >= 32 * (1024**3) and vram >= 8 * (1024**3):
+        info["tier"] = "SULTAN"
+    elif cores >= 6 and ram >= 16 * (1024**3):
+        info["tier"] = "MEDIUM"
+    elif cores < 4 or ram < 8 * (1024**3) or not has_gpu:
+        info["tier"] = "POTATO"
+    return info
+
+
+@app.get("/settings/runtime")
+def get_runtime_settings():
+    """
+    Desktop runtime settings stored in config/settings.json (inside app directory).
+    This is separate from config.json (analysis/provider config).
+    """
+    cfg = _load_settings_file()
+    return {
+        "processing_mode": (cfg.get("processing_mode") or "auto"),
+        "whisper_model": (cfg.get("whisper_model") or "small"),
+        "output_folder": (cfg.get("output_folder") or ""),
+    }
+
+
+class RuntimeSettingsPayload(BaseModel):
+    processing_mode: Optional[str] = None  # auto | cpu_only | gpu_acceleration
+    whisper_model: Optional[str] = None  # tiny | base | small | medium | large
+
+
+@app.post("/settings/runtime")
+def save_runtime_settings(payload: RuntimeSettingsPayload):
+    patch = {}
+    if payload.processing_mode:
+        patch["processing_mode"] = str(payload.processing_mode)
+    if payload.whisper_model:
+        patch["whisper_model"] = str(payload.whisper_model)
+    merged = _save_settings_file(patch)
+    return {
+        "ok": True,
+        "processing_mode": merged.get("processing_mode") or "auto",
+        "whisper_model": merged.get("whisper_model") or "small",
+    }
 
 
 @app.get("/projects")

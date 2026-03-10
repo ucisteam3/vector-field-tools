@@ -7,6 +7,8 @@ import ExportSettingsPanel from "@/components/ExportSettingsPanel";
 import ApiKeysPanel from "@/components/ApiKeysPanel";
 import CookiesSettingsPanel from "@/components/CookiesSettingsPanel";
 import OutputFolderPanel from "@/components/OutputFolderPanel";
+import { HardwareInfoPanel } from "@/components/HardwareInfoPanel";
+import { RuntimeSettingsPanel } from "@/components/RuntimeSettingsPanel";
 import { useAppSettings } from "@/lib/settings-store";
 
 function AccordionSection({
@@ -44,6 +46,8 @@ export default function SettingsPage() {
   const [openKeys, setOpenKeys] = useState(false);
   const [openCookies, setOpenCookies] = useState(false);
   const [openOutput, setOpenOutput] = useState(false);
+  const [openHardware, setOpenHardware] = useState(false);
+  const [openRuntime, setOpenRuntime] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -101,6 +105,28 @@ export default function SettingsPage() {
               onToggle={() => setOpenOutput((v) => !v)}
             >
               <OutputFolderPanel />
+            </AccordionSection>
+
+            <AccordionSection
+              title="Hardware Info"
+              description="Deteksi CPU/RAM/GPU untuk Auto mode."
+              open={openHardware}
+              onToggle={() => setOpenHardware((v) => !v)}
+            >
+              <div className="p-5">
+                <HardwareInfoPanel />
+              </div>
+            </AccordionSection>
+
+            <AccordionSection
+              title="AI Runtime"
+              description="Mode proses + Whisper model (disimpan di folder app)."
+              open={openRuntime}
+              onToggle={() => setOpenRuntime((v) => !v)}
+            >
+              <div className="p-5">
+                <RuntimeSettingsPanel />
+              </div>
             </AccordionSection>
           </div>
         </div>

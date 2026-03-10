@@ -45,6 +45,44 @@ export async function getProjects(): Promise<Project[]> {
   }
 }
 
+export type HardwareInfo = {
+  cpu: string;
+  cpu_cores: number;
+  ram_bytes: number | null;
+  gpu: string | null;
+  vram_bytes: number | null;
+  cuda_available: boolean;
+  tier: "POTATO" | "MEDIUM" | "SULTAN" | string;
+};
+
+export async function getHardwareInfo(): Promise<HardwareInfo> {
+  const res = await fetch(`${API}/hardware_info`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export type RuntimeSettings = {
+  processing_mode: "auto" | "cpu_only" | "gpu_acceleration" | string;
+  whisper_model: "tiny" | "base" | "small" | "medium" | "large" | string;
+  output_folder?: string;
+};
+
+export async function getRuntimeSettings(): Promise<RuntimeSettings> {
+  const res = await fetch(`${API}/settings/runtime`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function saveRuntimeSettings(patch: Partial<RuntimeSettings>): Promise<RuntimeSettings> {
+  const res = await fetch(`${API}/settings/runtime`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function getProject(id: string): Promise<Project> {
   const res = await fetch(`${API}/project/${id}`);
   if (!res.ok) throw new Error(await res.text());
