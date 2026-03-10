@@ -1,7 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { getRuntimeSettings, saveRuntimeSettings, type RuntimeSettings } from "@/lib/api";
+import {
+  downloadWhisperModel,
+  getRuntimeSettings,
+  getRuntimeStatus,
+  saveRuntimeSettings,
+  type RuntimeSettings,
+  type RuntimeStatus,
+} from "@/lib/api";
 
 const WHISPER_MODELS: { id: RuntimeSettings["whisper_model"]; label: string; size: string }[] = [
   { id: "tiny", label: "tiny", size: "~75MB" },
@@ -13,15 +20,18 @@ const WHISPER_MODELS: { id: RuntimeSettings["whisper_model"]; label: string; siz
 
 export function RuntimeSettingsPanel() {
   const [data, setData] = React.useState<RuntimeSettings | null>(null);
+  const [rt, setRt] = React.useState<RuntimeStatus | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
+  const [downloading, setDownloading] = React.useState(false);
 
   React.useEffect(() => {
     let alive = true;
-    getRuntimeSettings()
-      .then((d) => {
+    Promise.all([getRuntimeSettings(), getRuntimeStatus()])
+      .then(([d, s]) => {
         if (!alive) return;
         setData(d);
+        setRt(s);
       })
       .catch((e) => {
         if (!alive) return;
@@ -49,6 +59,9 @@ export function RuntimeSettingsPanel() {
   if (err) return <div className="text-sm text-red-600">{err}</div>;
   if (!data) return <div className="text-sm text-gray-600">Memuat runtime settings...</div>;
 
+  const installed = new Set((rt?.whisper?.installed || []).map((x) => String(x)));
+  const selectedInstalled = installed.has(String(data.whisper_model));
+
   return (
     <div className="space-y-4 text-sm">
       <div>
@@ -67,20 +80,49 @@ export function RuntimeSettingsPanel() {
 
       <div>
         <label className="block text-xs text-zinc-500 mb-1">Whisper Model</label>
-        <select
-          value={data.whisper_model}
-          onChange={(e) => update({ whisper_model: e.target.value })}
-          className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-white"
-          disabled={saving}
-        >
-          {WHISPER_MODELS.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label} ({m.size})
-            </option>
-          ))}
-        </select>
+        <div className="flex gap-2">
+          <select
+            value={data.whisper_model}
+            onChange={(e) => update({ whisper_model: e.target.value })}
+            className="flex-1 rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-white"
+            disabled={saving || downloading}
+          >
+            {WHISPER_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label} ({m.size})
+              </option>
+            ))}
+          </select>
+
+          {!selectedInstalled && (
+            <button
+              type="button"
+              className="px-3 py-2 rounded bg-cyan-500 text-black hover:bg-cyan-400 disabled:opacity-60"
+              disabled={downloading || saving}
+              onClick={async () => {
+                setDownloading(true);
+                setErr(null);
+                try {
+                  await downloadWhisperModel(String(data.whisper_model));
+                  const s = await getRuntimeStatus();
+                  setRt(s);
+                } catch (e) {
+                  setErr(String((e as Error)?.message || e));
+                } finally {
+                  setDownloading(false);
+                }
+              }}
+            >
+              Download
+            </button>
+          )}
+        </div>
         <div className="text-xs text-zinc-500 mt-1">
-          Model akan otomatis download ke <code>runtime/models/whisper/</code> saat dipakai.
+          Status:{" "}
+          <span className={selectedInstalled ? "text-green-400" : "text-yellow-300"}>
+            {selectedInstalled ? "Installed" : "Not installed"}
+          </span>{" "}
+          — model akan disimpan di <code>runtime/models/whisper/</code>.
         </div>
       </div>
     </div>

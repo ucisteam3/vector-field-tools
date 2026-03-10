@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { getHardwareInfo, type HardwareInfo } from "@/lib/api";
+import { checkRuntimeUpdates, getHardwareInfo, getRuntimeStatus, type HardwareInfo, type RuntimeStatus } from "@/lib/api";
 
 function formatBytes(n: number | null | undefined): string {
   if (!n || n <= 0) return "-";
@@ -13,14 +13,17 @@ function formatBytes(n: number | null | undefined): string {
 
 export function HardwareInfoPanel() {
   const [data, setData] = React.useState<HardwareInfo | null>(null);
+  const [rt, setRt] = React.useState<RuntimeStatus | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
     let alive = true;
-    getHardwareInfo()
-      .then((d) => {
+    Promise.all([getHardwareInfo(), getRuntimeStatus()])
+      .then(([d, s]) => {
         if (!alive) return;
         setData(d);
+        setRt(s);
       })
       .catch((e) => {
         if (!alive) return;
@@ -51,20 +54,35 @@ export function HardwareInfoPanel() {
         Installing GPU acceleration can increase processing speed by up to 10x.
       </div>
       <div className="flex flex-col gap-2">
-        <button
-          className="px-3 py-2 rounded bg-gray-900 text-white hover:bg-gray-800"
-          onClick={() => alert("TODO: Download CUDA runtime into runtime/gpu/cuda/")}
-          type="button"
-        >
-          Download CUDA Acceleration (Recommended for NVIDIA GPU)
-        </button>
-        <button
-          className="px-3 py-2 rounded bg-gray-900 text-white hover:bg-gray-800"
-          onClick={() => alert("TODO: Download AMD runtime into runtime/gpu/amd/")}
-          type="button"
-        >
-          Download AMD Acceleration (Recommended for AMD GPU)
-        </button>
+        {data.cuda_available ? (
+          <button
+            className="px-3 py-2 rounded bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-60"
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await checkRuntimeUpdates();
+                const s = await getRuntimeStatus();
+                setRt(s);
+              } catch (e) {
+                setErr(String((e as Error)?.message || e));
+              } finally {
+                setBusy(false);
+              }
+            }}
+            type="button"
+            disabled={busy}
+          >
+            Check for update (FFmpeg/Runtime)
+          </button>
+        ) : (
+          <div className="text-xs text-zinc-500">
+            CUDA tidak terdeteksi. (NVIDIA GPU acceleration tidak tersedia di PC ini)
+          </div>
+        )}
+
+        {rt?.ffmpeg?.bundled_present === false && (
+          <div className="text-xs text-red-600">FFmpeg runtime missing (akan di-install otomatis saat update).</div>
+        )}
       </div>
     </div>
   );

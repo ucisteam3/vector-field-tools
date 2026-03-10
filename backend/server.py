@@ -554,6 +554,36 @@ def save_runtime_settings(payload: RuntimeSettingsPayload):
     }
 
 
+@app.get("/runtime/status")
+def runtime_status():
+    """Runtime status for UI (installed models, ffmpeg presence, recommendations)."""
+    try:
+        from modules.runtime_manager import RuntimeManager
+        return RuntimeManager.get_status()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+class WhisperDownloadPayload(BaseModel):
+    model: str
+
+
+@app.post("/runtime/whisper/download")
+def runtime_whisper_download(payload: WhisperDownloadPayload):
+    """Download Whisper model into runtime/models/whisper/."""
+    from modules.runtime_manager import RuntimeManager
+    ok = RuntimeManager.ensure_whisper_model(payload.model)
+    return {"ok": bool(ok), "installed": RuntimeManager.installed_models()}
+
+
+@app.post("/runtime/check_updates")
+def runtime_check_updates():
+    """Check/install runtime updates (FFmpeg)."""
+    from modules.runtime_manager import RuntimeManager
+    RuntimeManager.ensure_ffmpeg_installed(allow_update=True, force_update_check=True)
+    return {"ok": True, "status": RuntimeManager.get_status()}
+
+
 @app.get("/projects")
 def projects_list():
     """List all projects."""

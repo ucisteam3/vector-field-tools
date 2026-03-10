@@ -83,6 +83,37 @@ export async function saveRuntimeSettings(patch: Partial<RuntimeSettings>): Prom
   return res.json();
 }
 
+export type RuntimeStatus = {
+  ffmpeg?: { bundled_present?: boolean; error?: string | null };
+  whisper?: { installed?: string[]; options?: string[]; available?: boolean };
+  gpu_runtime?: { cuda_installed?: boolean; amd_installed?: boolean; torch_cuda_available?: boolean };
+  recommended?: { mode?: string; encoder?: string; whisper_model?: string };
+  hardware?: { tier?: string };
+  error?: string;
+};
+
+export async function getRuntimeStatus(): Promise<RuntimeStatus> {
+  const res = await fetch(`${API}/runtime/status`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function downloadWhisperModel(model: string): Promise<{ ok: boolean; installed: string[] }> {
+  const res = await fetch(`${API}/runtime/whisper/download`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function checkRuntimeUpdates(): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API}/runtime/check_updates`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function getProject(id: string): Promise<Project> {
   const res = await fetch(`${API}/project/${id}`);
   if (!res.ok) throw new Error(await res.text());
